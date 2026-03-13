@@ -13,7 +13,6 @@ import TaskDetailScreen from './TaskDetailScreen';
 import InventoryScreen from './InventoryScreen';
 import { API_URL } from '../../lib/api';
 import { UserInfo } from '../../App';
-import { getBuildsphereAI } from '../../lib/generative-ai';
 import { Alert } from "react-native";
 
 interface DashboardScreenProps {
@@ -47,7 +46,6 @@ export default function DashboardScreen({ onLogout, user: initialUser }: Dashboa
     const [selectedTask, setSelectedTask] = useState<any>(null);
     const [showInventory, setShowInventory] = useState(false);
     const [inventoryProjectId, setInventoryProjectId] = useState<number | null>(null);
-    const [aiLoading, setAiLoading] = useState(false);
     const fabAnim = useRef(new Animated.Value(0)).current;
 
     useEffect(() => {
@@ -81,25 +79,6 @@ export default function DashboardScreen({ onLogout, user: initialUser }: Dashboa
         setFabOpen(!fabOpen);
     };
 
-    const handleAskAI = async () => {
-        if (projects.length === 0) {
-            Alert.alert("No Projects", "Add a project first to get AI suggestions.");
-            return;
-        }
-
-        setAiLoading(true);
-        try {
-            const projectNames = projects.map(p => p.name).join(", ");
-            const prompt = `I am using a construction management app called Buildsphere. I have these projects: ${projectNames}. Give me one quick, expert advice or tip for managing these projects today. Keep it short (2-3 sentences).`;
-            const response = await getBuildsphereAI(prompt);
-            Alert.alert("Buildsphere AI", response);
-        } catch (error) {
-            Alert.alert("AI Error", "Could not reach Gemini AI. Check your connection or API key.");
-        } finally {
-            setAiLoading(false);
-        }
-    };
-
     const showFab = activeTab !== 'more';
 
     return (
@@ -120,20 +99,6 @@ export default function DashboardScreen({ onLogout, user: initialUser }: Dashboa
                             <View className="bg-white rounded-[20px] p-5 shadow-sm mb-6 flex-row justify-between items-center border border-gray-100">
                                 <View>
                                     <Text className="text-[#1E1E1E] text-base font-semibold">Ongoing Projects</Text>
-                                    <TouchableOpacity 
-                                        onPress={handleAskAI} 
-                                        disabled={aiLoading}
-                                        className="mt-2 bg-[#F0EEFF] px-3 py-1.5 rounded-full self-start flex-row items-center"
-                                    >
-                                        {aiLoading ? (
-                                            <ActivityIndicator size="small" color="#6C63FF" />
-                                        ) : (
-                                            <>
-                                                <Ionicons name="sparkles" size={14} color="#6C63FF" />
-                                                <Text className="text-[#6C63FF] text-[12px] font-bold ml-1">Ask AI</Text>
-                                            </>
-                                        )}
-                                    </TouchableOpacity>
                                 </View>
                                 <Text className="text-[#FFA500] text-3xl font-bold">{projects.length}</Text>
                             </View>
