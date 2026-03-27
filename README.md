@@ -1,1 +1,0 @@
-# Practive-React-Native
