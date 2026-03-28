@@ -1,0 +1,15 @@
+{
+  "outputs": [
+    {
+      "annotated_image": "[BASE64_IMAGE_REMOVED]",
+      "predictions": {
+        "image": {
+          "width": null,
+          "height": null
+        },
+        "predictions": []
+      }
+    }
+  ],
+  "profiler_trace": []
+}
