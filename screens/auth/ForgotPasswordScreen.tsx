@@ -8,7 +8,9 @@ import {
   Keyboard,
   TouchableWithoutFeedback,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 
 import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 
@@ -47,6 +49,13 @@ export default function ForgotPasswordScreen({ onBackToLogin }: ForgotPasswordSc
   return (
     <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
       <View style={{ flex: 1, backgroundColor: '#ffffff' }}>
+        {/* BACKGROUND GRADIENT */}
+        <LinearGradient
+          colors={['#D8D5FF', 'rgba(255,255,255,0)']}
+          start={{ x: 0.5, y: 0 }}
+          end={{ x: 0.5, y: 1 }}
+          style={{ position: 'absolute', left: 0, right: 0, top: 0, height: '60%' }}
+        />
 
         <KeyboardAwareScrollView
           style={{ flex: 1 }}

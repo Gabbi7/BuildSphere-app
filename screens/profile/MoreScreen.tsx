@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, Image } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, Image, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { UserInfo } from '../../App';
 import EditProfileScreen from './EditProfileScreen';
@@ -109,7 +109,18 @@ export default function MoreScreen({ user, onLogout, onUserUpdated }: MoreScreen
             <Ionicons name="chevron-forward" size={18} color="#C0C0C0" />
           </TouchableOpacity>
 
-          <TouchableOpacity onPress={onLogout} className="flex-row items-center px-5 py-4">
+          <TouchableOpacity 
+            onPress={() => {
+              Alert.alert(
+                'Logout',
+                'Are you sure you want to log out of BuildSphere?',
+                [
+                  { text: 'Cancel', style: 'cancel' },
+                  { text: 'Logout', style: 'destructive', onPress: onLogout },
+                ]
+              );
+            }} 
+            className="flex-row items-center px-5 py-4">
             <View className="mr-3 h-8 w-8 items-center justify-center rounded-full bg-[#FFE8E8]">
               <Ionicons name="log-out-outline" size={18} color="#FF6B6B" />
             </View>

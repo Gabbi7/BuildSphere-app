@@ -11,7 +11,7 @@ import {
 
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import ProjectCard from './ProjectCard';
 import MyWork from './MyWork';
 import Notifications from './Notifications';
@@ -23,6 +23,7 @@ import TaskDetailScreen from './TaskDetailScreen';
 import InventoryScreen from './InventoryScreen';
 import { API_URL } from '../../lib/api';
 import { UserInfo } from '../../App';
+import { getPermissions } from '../../constants/roles';
 
 interface DashboardScreenProps {
   onLogout: () => void;
@@ -37,12 +38,6 @@ interface Project {
   color: string;
   status: string;
 }
-
-const FAB_ACTIONS = [
-  { label: 'Add new task', icon: 'add-circle-outline', key: 'task' },
-  { label: 'Update inventory', icon: 'cube-outline', key: 'inventory' },
-  { label: 'Upload Site Progress', icon: 'cloud-upload-outline', key: 'site' },
-];
 
 export default function DashboardScreen({
   onLogout,
@@ -62,6 +57,20 @@ export default function DashboardScreen({
   const fabAnim = useRef(new Animated.Value(0)).current;
   const [selectedTask, setSelectedTask] = useState<any>(null);
   const [projectActionModal, setProjectActionModal] = useState<Project | null>(null);
+
+  // ─── RBAC: Filtered FAB Actions ──────────────────────────────────────────
+  const perms = useMemo(() => getPermissions(user.role), [user.role]);
+
+  const FAB_ACTIONS = useMemo(() => {
+    const actions = [];
+    if (perms.canCreateTasks)
+      actions.push({ label: 'Add new task', icon: 'add-circle-outline', key: 'task' });
+    if (perms.canEditInventory)
+      actions.push({ label: 'Update inventory', icon: 'cube-outline', key: 'inventory' });
+    if (perms.canSubmitSiteUpdates)
+      actions.push({ label: 'Upload Site Progress', icon: 'cloud-upload-outline', key: 'site' });
+    return actions;
+  }, [perms]);
 
   const handleProjectAction = (project: Project) => {
     setProjectActionModal(project);
@@ -92,16 +101,28 @@ export default function DashboardScreen({
     );
   };
 
-  // Sync local user state if prop changes (e.g. from App.tsx persistence)
   useEffect(() => {
     setUser(initialUser);
   }, [initialUser]);
 
   useEffect(() => {
+    // ─── RBAC: Redirect from Home if not permitted ───
+    if (!perms.canViewDashboard && activeTab === 'home') {
+      setActiveTab('mywork');
+    }
+  }, [perms.canViewDashboard, activeTab]);
+
+  useEffect(() => {
     fetch(`${API_URL}/projects`)
       .then((res) => res.json())
       .then((data) => {
-        const mappedData = data.map((p: any) => {
+        // ─── RBAC: Filter projects for Project Engineers (PIC only) ───
+        let filteredData = data;
+        if (user.role.toLowerCase() === 'project_engineer') {
+          filteredData = data.filter((p: any) => String(p.project_in_charge_id) === String(user.id));
+        }
+
+        const mappedData = filteredData.map((p: any) => {
           if (p.image_url === 'building.jpg') p.image = require('../../assets/building.jpg');
           if (p.image_url === 'Gemini_Generated_Image_mcjrmgmcjrmgmcjr.png')
             p.image = require('../../assets/Gemini_Generated_Image_mcjrmgmcjrmgmcjr.png');
@@ -112,7 +133,6 @@ export default function DashboardScreen({
         setProjects(mappedData);
         setLoadingProjects(false);
       })
-      // .catch(() => setLoadingProjects(false)); eto yung oopen
       .catch((err) => {
         console.error('Dashboard Projects Fetch Error:', err);
         setLoadingProjects(false);
@@ -125,7 +145,9 @@ export default function DashboardScreen({
     setFabOpen(!fabOpen);
   };
 
-  const showFab = activeTab !== 'more';
+  // Only show FAB if current tab allows it (More tab hides it) and there are actions available for the role
+  const showFab = activeTab !== 'more' && FAB_ACTIONS.length > 0;
+
   return (
     <View className="flex-1 bg-[#F5F5F7]">
       <SafeAreaView className="flex-1">
@@ -134,20 +156,31 @@ export default function DashboardScreen({
             {selectedProjectId ? (
               <ProjectDetailScreen
                 projectId={selectedProjectId}
+                userRole={user.role}
                 onBack={() => setSelectedProjectId(null)}
               />
             ) : (
               <ScrollView contentContainerStyle={{ paddingBottom: 160 }} className="px-5 pt-4">
-                <Text className="mb-1 text-[22px] font-bold text-[#6C63FF]">Home</Text>
+                <View className="flex-row items-center justify-between">
+                  <Text className="mb-1 text-[22px] font-bold text-[#6C63FF]">Home</Text>
+                  <View className="bg-purple-100 px-3 py-1 rounded-full">
+                    <Text className="text-[10px] font-bold text-[#6C63FF] uppercase">{user.role}</Text>
+                  </View>
+                </View>
                 <Text className="mb-4 text-[13px] text-[#A3A3A3]">
                   Welcome back, {user.firstName}! 👋
                 </Text>
-                <View className="mb-6 flex-row items-center justify-between rounded-[20px] border border-gray-100 bg-white p-5 shadow-sm">
-                  <View>
-                    <Text className="text-base font-semibold text-[#1E1E1E]">Ongoing Projects</Text>
+
+                {/* Dashboard Summary Card — Hidden for Accounting audit view */}
+                {user.role.toLowerCase() !== 'accounting' && (
+                  <View className="mb-6 flex-row items-center justify-between rounded-[20px] border border-gray-100 bg-white p-5 shadow-sm">
+                    <View>
+                      <Text className="text-base font-semibold text-[#1E1E1E]">Ongoing Projects</Text>
+                    </View>
+                    <Text className="text-3xl font-bold text-[#FFA500]">{projects.length}</Text>
                   </View>
-                  <Text className="text-3xl font-bold text-[#FFA500]">{projects.length}</Text>
-                </View>
+                )}
+
                 <Text className="mb-4 text-lg font-bold text-[#1E1E1E]">Projects</Text>
                 {loadingProjects ? (
                   <ActivityIndicator color="#7370FF" />
@@ -189,7 +222,7 @@ export default function DashboardScreen({
           />
         )}
 
-        {/* FAB Actions ... */}
+        {/* FAB Actions (Strictly filtered by RBAC) */}
         {fabOpen && (
           <View className="absolute bottom-[160px] right-5 items-end">
             {FAB_ACTIONS.map((action, index) => (
@@ -274,15 +307,17 @@ export default function DashboardScreen({
 
         {/* BOTTOM NAVIGATION */}
         <View className="absolute bottom-8 left-5 right-5 h-[70px] flex-row items-center justify-between rounded-[30px] bg-white px-6 shadow-xl shadow-gray-200">
-          <TouchableOpacity
-            className={`items-center rounded-full p-2 px-4 ${activeTab === 'home' ? 'bg-[#EAE8FF]' : ''}`}
-            onPress={() => setActiveTab('home')}>
-            <Ionicons name="home" size={24} color={activeTab === 'home' ? '#6C63FF' : '#9A9A9A'} />
-            <Text
-              className={`mt-1 text-[10px] ${activeTab === 'home' ? 'font-bold text-[#6C63FF]' : 'text-[#9A9A9A]'}`}>
-              Home
-            </Text>
-          </TouchableOpacity>
+          {perms.canViewDashboard && (
+            <TouchableOpacity
+              className={`items-center rounded-full p-2 px-4 ${activeTab === 'home' ? 'bg-[#EAE8FF]' : ''}`}
+              onPress={() => setActiveTab('home')}>
+              <Ionicons name="home" size={24} color={activeTab === 'home' ? '#6C63FF' : '#9A9A9A'} />
+              <Text
+                className={`mt-1 text-[10px] ${activeTab === 'home' ? 'font-bold text-[#6C63FF]' : 'text-[#9A9A9A]'}`}>
+                Home
+              </Text>
+            </TouchableOpacity>
+          )}
           <TouchableOpacity
             className={`items-center rounded-full p-2 px-4 ${activeTab === 'mywork' ? 'bg-[#EAE8FF]' : ''}`}
             onPress={() => setActiveTab('mywork')}>
@@ -342,14 +377,19 @@ export default function DashboardScreen({
       <TaskDetailScreen
         visible={!!selectedTask}
         task={selectedTask}
+        userRole={user.role}
         onClose={() => setSelectedTask(null)}
+        onViewInventory={(projectId) => {
+          setSelectedTask(null);
+          setInventoryProjectId(projectId);
+          setShowInventory(true);
+        }}
       />
       {showInventory && inventoryProjectId && (
         <Modal visible={showInventory} animationType="slide" transparent={false}>
-          <InventoryScreen projectId={inventoryProjectId} onBack={() => setShowInventory(false)} />
+          <InventoryScreen projectId={inventoryProjectId} onBack={() => setShowInventory(false)} userRole={user.role} />
         </Modal>
       )}
-
 
       {/* Project Action Modal (ActionSheet) */}
       <Modal
@@ -375,20 +415,6 @@ export default function DashboardScreen({
             </TouchableOpacity>
 
             <TouchableOpacity 
-              onPress={() => setProjectActionModal(null)}
-              className="flex-row items-center py-4 border-b border-gray-50">
-              <Ionicons name="text-outline" size={22} color="#7370FF" />
-              <Text className="ml-4 text-[16px] text-[#2D2D2D]">Change Name</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity 
-              onPress={() => setProjectActionModal(null)}
-              className="flex-row items-center py-4 border-b border-gray-50">
-              <Ionicons name="image-outline" size={22} color="#7370FF" />
-              <Text className="ml-4 text-[16px] text-[#2D2D2D]">Change Cover</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity 
               onPress={() => deleteProject(projectActionModal!.id)}
               className="flex-row items-center py-4">
               <Ionicons name="trash-outline" size={22} color="#FF6B6B" />
@@ -397,7 +423,6 @@ export default function DashboardScreen({
           </View>
         </TouchableOpacity>
       </Modal>
-
     </View>
   );
 }

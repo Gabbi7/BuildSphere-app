@@ -13,6 +13,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { API_URL } from '../../lib/api';
 import InventoryScreen from './InventoryScreen';
 import SiteUpdatesScreen from './SiteUpdatesScreen';
+import { type UserRole } from '../../constants/roles';
 
 const { width } = Dimensions.get('window');
 
@@ -32,6 +33,7 @@ interface Project {
 interface Props {
   projectId: number;
   onBack: () => void;
+  userRole?: UserRole;
 }
 
 const PRIMARY = '#7370FF';
@@ -68,7 +70,7 @@ function daysLeft(end?: string) {
   return diff > 0 ? diff : 0;
 }
 
-export default function ProjectDetailScreen({ projectId, onBack }: Props) {
+export default function ProjectDetailScreen({ projectId, onBack, userRole }: Props) {
   const [project, setProject] = useState<Project | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeSection, setActiveSection] = useState<
@@ -90,7 +92,7 @@ export default function ProjectDetailScreen({ projectId, onBack }: Props) {
   }, [projectId]);
 
   if (activeSection === 'inventory' && project) {
-    return <InventoryScreen projectId={project.id} onBack={() => setActiveSection('detail')} />;
+    return <InventoryScreen projectId={project.id} onBack={() => setActiveSection('detail')} userRole={userRole} />;
   }
 
   if (loading || !project) {

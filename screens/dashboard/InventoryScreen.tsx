@@ -13,6 +13,7 @@ import {
 
 import { Ionicons } from '@expo/vector-icons';
 import { API_URL } from '../../lib/api';
+import { getPermissions, type UserRole } from '../../constants/roles';
 
 interface InventoryItem {
   id: number;
@@ -27,6 +28,7 @@ interface InventoryItem {
 interface Props {
   projectId: number;
   onBack: () => void;
+  userRole?: UserRole;
 }
 
 const categoryColors: Record<string, { bg: string; text: string }> = {
@@ -45,7 +47,10 @@ function stockStatus(qty: string, critical: string): { label: string; bg: string
 
 const PREDEFINED_ITEMS = ['Cement', 'Extension Wire', 'Glass Panels', 'Welding Machine'];
 
-export default function InventoryScreen({ projectId, onBack }: Props) {
+export default function InventoryScreen({ projectId, onBack, userRole }: Props) {
+  const perms = getPermissions(userRole);
+  const canEdit = perms.canEditInventory;
+  const canAdd = perms.canAddInventory;
   const [items, setItems] = useState<InventoryItem[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -243,19 +248,21 @@ export default function InventoryScreen({ projectId, onBack }: Props) {
       {/* ... rest of the content ... */}
 
 
-      {/* Add Button */}
-      <TouchableOpacity
-        onPress={() => setShowAdd(true)}
-        className="mx-5 mb-6 h-[56px] items-center justify-center rounded-[14px] shadow-lg"
-        style={{
-          backgroundColor: '#7370FF',
-          shadowColor: '#7370FF',
-          shadowOpacity: 0.3,
-          shadowRadius: 8,
-          shadowOffset: { width: 0, height: 4 },
-        }}>
-        <Text className="text-[18px] font-bold text-white">Add an Item</Text>
-      </TouchableOpacity>
+      {/* Add Button — only if role has permission (Procurement, etc.) */}
+      {canAdd && (
+        <TouchableOpacity
+          onPress={() => setShowAdd(true)}
+          className="mx-5 mb-6 h-[56px] items-center justify-center rounded-[14px] shadow-lg"
+          style={{
+            backgroundColor: '#7370FF',
+            shadowColor: '#7370FF',
+            shadowOpacity: 0.3,
+            shadowRadius: 8,
+            shadowOffset: { width: 0, height: 4 },
+          }}>
+          <Text className="text-[18px] font-bold text-white">Add an Item</Text>
+        </TouchableOpacity>
+      )}
 
       {/* List */}
       {loading ? (
@@ -290,27 +297,29 @@ export default function InventoryScreen({ projectId, onBack }: Props) {
                       </Text>
                     </View>
                   </View>
-                  <TouchableOpacity
-                    onPress={() =>
-                      Alert.alert(item.item_name, 'Choose action', [
-                        {
-                          text: 'Update',
-                          onPress: () => {
-                            setEditItem(item);
-                            setEditName(item.item_name);
-                            setEditQty(item.quantity);
+                  {canEdit && (
+                    <TouchableOpacity
+                      onPress={() =>
+                        Alert.alert(item.item_name, 'Choose action', [
+                          {
+                            text: 'Update',
+                            onPress: () => {
+                              setEditItem(item);
+                              setEditName(item.item_name);
+                              setEditQty(item.quantity);
+                            },
                           },
-                        },
-                        {
-                          text: 'Delete',
-                          style: 'destructive',
-                          onPress: () => handleDelete(item.id),
-                        },
-                        { text: 'Cancel', style: 'cancel' },
-                      ])
-                    }>
-                    <Ionicons name="ellipsis-vertical" size={20} color="#B9B9B9" />
-                  </TouchableOpacity>
+                          {
+                            text: 'Delete',
+                            style: 'destructive',
+                            onPress: () => handleDelete(item.id),
+                          },
+                          { text: 'Cancel', style: 'cancel' },
+                        ])
+                      }>
+                      <Ionicons name="ellipsis-vertical" size={20} color="#B9B9B9" />
+                    </TouchableOpacity>
+                  )}
                 </View>
 
                 <View className="flex-row justify-between">

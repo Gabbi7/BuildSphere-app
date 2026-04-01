@@ -7,6 +7,7 @@ import { StatusBar } from 'expo-status-bar';
 import { View, ActivityIndicator } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import type { UserRole } from './constants/roles';
 
 export interface UserInfo {
   id: number;
@@ -14,6 +15,7 @@ export interface UserInfo {
   lastName: string;
   email: string;
   profilePictureUrl?: string;
+  role: UserRole;
 }
 
 export default function App() {
@@ -30,6 +32,8 @@ export default function App() {
         // Normalize snake_case to camelCase for legacy sessions
         if (parsed.first_name && !parsed.firstName) parsed.firstName = parsed.first_name;
         if (parsed.last_name && !parsed.lastName) parsed.lastName = parsed.last_name;
+        // Default role for legacy sessions
+        if (!parsed.role) parsed.role = 'general_staff';
         setUser(parsed);
       }
       setLoading(false);

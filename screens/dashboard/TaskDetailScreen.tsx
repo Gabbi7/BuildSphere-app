@@ -8,11 +8,14 @@ import {
   Image,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { getPermissions, type UserRole } from '../../constants/roles';
 
 interface TaskDetailScreenProps {
   visible: boolean;
   task: any;
   onClose: () => void;
+  userRole?: UserRole;
+  onViewInventory?: (projectId: number) => void;
 }
 
 interface Comment {
@@ -26,8 +29,16 @@ interface Comment {
 
 const PRIMARY = '#7370FF';
 
-export default function TaskDetailScreen({ visible, task, onClose }: TaskDetailScreenProps) {
+export default function TaskDetailScreen({ 
+  visible, 
+  task, 
+  onClose,
+  userRole,
+  onViewInventory
+}: TaskDetailScreenProps) {
   if (!task) return null;
+
+  const perms = getPermissions(userRole);
 
   const getStatusStyle = (status: string) => {
     switch (status?.toLowerCase()) {
@@ -150,6 +161,22 @@ export default function TaskDetailScreen({ visible, task, onClose }: TaskDetailS
               </View>
             </View>
           </View>
+
+          {/* RBAC: Audit Inventory Link for Accounting/Engr */}
+          {perms.canViewInventory && (
+            <View className="mb-8">
+              <Text className="mb-4 text-[18px] font-bold text-[#1E1E1E]">Project Oversight</Text>
+              <TouchableOpacity 
+                onPress={() => onViewInventory && onViewInventory(task.project_id)}
+                className="h-[60px] w-full flex-row items-center justify-center rounded-[16px] bg-[#7370FF]">
+                <Ionicons name="cube-outline" size={24} color="white" />
+                <Text className="ml-3 font-bold text-white">Audit Project Inventory</Text>
+              </TouchableOpacity>
+              <Text className="mt-2 text-center text-[12px] italic text-[#A3A3A3]">
+                Verification access for project materials & budgets.
+              </Text>
+            </View>
+          )}
 
           {/* Comments Section */}
           <View className="mb-10 rounded-[24px] border border-[#EDECFF] bg-[#F6F6FF] p-6">
