@@ -15,7 +15,6 @@ export type UserRole =
   | 'human_resources'
   | 'sales'
   | 'accounting'
-  | 'general_staff'
   | 'staff';
 
 export interface Permissions {
@@ -117,14 +116,6 @@ const ROLE_PERMISSIONS: Record<UserRole, Permissions> = {
     canAddInventory: false,
     canSubmitSiteUpdates: false,
   },
-  general_staff: {
-    canViewDashboard: false,
-    canCreateTasks: false,
-    canViewInventory: false,
-    canEditInventory: false,
-    canAddInventory: false,
-    canSubmitSiteUpdates: false,
-  },
   staff: {
     canViewDashboard: false,
     canCreateTasks: false,
@@ -136,8 +127,8 @@ const ROLE_PERMISSIONS: Record<UserRole, Permissions> = {
 };
 
 export function getPermissions(role?: string): Permissions {
-  const key = (role || 'general_staff')
+  const key = (role || 'staff')
     .toLowerCase()
     .replace(/[\s-]+/g, '_') as UserRole;
-  return ROLE_PERMISSIONS[key] || ROLE_PERMISSIONS.general_staff;
+  return ROLE_PERMISSIONS[key] || ROLE_PERMISSIONS.staff;
 }

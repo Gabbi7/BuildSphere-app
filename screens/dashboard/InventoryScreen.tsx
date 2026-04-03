@@ -9,6 +9,7 @@ import {
   TextInput,
   Alert,
   Platform,
+  KeyboardAvoidingView,
 } from 'react-native';
 
 import { Ionicons } from '@expo/vector-icons';
@@ -79,71 +80,12 @@ export default function InventoryScreen({ projectId, onBack, userRole }: Props) 
     fetch(`${API_URL}/inventory?projectId=${projectId}`)
       .then((r) => r.json())
       .then((d) => {
-        if (d.length > 0) {
-          setItems(d);
-        } else {
-          setItems([
-            {
-              id: 1,
-              item_name: 'Cement',
-              category: 'Materials',
-              quantity: '25 bags',
-              critical_level: '20 bags',
-              price: 'P100 per bag',
-              unit: 'bags',
-            },
-            {
-              id: 2,
-              item_name: 'Extension Wire',
-              category: 'Materials',
-              quantity: '1 piece',
-              critical_level: '5 piece',
-              price: 'P50 per piece',
-              unit: 'piece',
-            },
-            {
-              id: 3,
-              item_name: 'Welding Machine',
-              category: 'Equipment',
-              quantity: '1 piece',
-              critical_level: '1 piece',
-              price: 'P800 per piece',
-              unit: 'piece',
-            },
-          ]);
-        }
+        setItems(d || []);
         setLoading(false);
       })
-      .catch(() => {
-        setItems([
-          {
-            id: 1,
-            item_name: 'Cement',
-            category: 'Materials',
-            quantity: '25 bags',
-            critical_level: '20 bags',
-            price: 'P100 per bag',
-            unit: 'bags',
-          },
-          {
-            id: 2,
-            item_name: 'Extension Wire',
-            category: 'Materials',
-            quantity: '1 piece',
-            critical_level: '5 piece',
-            price: 'P50 per piece',
-            unit: 'piece',
-          },
-          {
-            id: 3,
-            item_name: 'Welding Machine',
-            category: 'Equipment',
-            quantity: '1 piece',
-            critical_level: '1 piece',
-            price: 'P800 per piece',
-            unit: 'piece',
-          },
-        ]);
+      .catch((err) => {
+        console.error('Inventory Fetch Error:', err);
+        setItems([]);
         setLoading(false);
       });
   };
@@ -375,7 +317,10 @@ export default function InventoryScreen({ projectId, onBack, userRole }: Props) 
         transparent
         animationType="slide"
         onRequestClose={() => setShowAdd(false)}>
-        <View className="flex-1 justify-center px-6" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          className="flex-1 justify-center px-6"
+          style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
           <View className="rounded-[32px] bg-white p-6 shadow-2xl">
             <View className="mb-6 flex-row items-center justify-between">
               <View className="flex-1" />
@@ -388,47 +333,48 @@ export default function InventoryScreen({ projectId, onBack, userRole }: Props) 
             </View>
 
             <Text className="mb-2 text-[12px] font-bold text-[#1E1E1E]">Item Name</Text>
-
-            <TouchableOpacity
-              onPress={() => setShowItemPicker(!showItemPicker)}
+            <TextInput
+              value={addName}
+              onChangeText={setAddName}
               style={inputStyle}
-              className="flex-row items-center justify-between">
-              <Text className={`text-[14px] ${addName ? 'text-[#1E1E1E]' : 'text-[#A3A3A3]'}`}>
-                {addName || 'Select item...'}
-              </Text>
-              <Ionicons
-                name={showItemPicker ? 'chevron-up' : 'chevron-down'}
-                size={20}
-                color="#7370FF"
-              />
-            </TouchableOpacity>
+              placeholder="e.g. Cement, Glass Panels..."
+              placeholderTextColor="#A3A3A3"
+            />
+            {/* 
+              In case you want the dropdown picker back in the future, here is the code:
+              <TouchableOpacity
+                onPress={() => setShowItemPicker(!showItemPicker)}
+                style={inputStyle}
+                className="flex-row items-center justify-between">
+                <Text className={`text-[14px] ${addName ? 'text-[#1E1E1E]' : 'text-[#A3A3A3]'}`}>
+                  {addName || 'Select item...'}
+                </Text>
+                <Ionicons name={showItemPicker ? 'chevron-up' : 'chevron-down'} size={20} color="#7370FF" />
+              </TouchableOpacity>
 
-            {showItemPicker && (
-              <View className="mt-1 overflow-hidden rounded-[12px] border border-[#E7E7EE] bg-white shadow-sm">
-                {PREDEFINED_ITEMS.map((item, index) => (
+              {showItemPicker && (
+                <View className="mt-1 overflow-hidden rounded-[12px] border border-[#E7E7EE] bg-white shadow-sm">
+                  {PREDEFINED_ITEMS.map((item, index) => (
+                    <TouchableOpacity
+                      key={item}
+                      onPress={() => {
+                        setAddName(item);
+                        setShowItemPicker(false);
+                      }}
+                      className={`p-4 ${index !== PREDEFINED_ITEMS.length - 1 ? 'border-b border-[#F0F0F0]' : ''} ${addName === item ? 'bg-[#F9F8FF]' : ''}`}>
+                      <Text className={`text-[14px] ${addName === item ? 'font-bold text-[#7370FF]' : 'text-[#1E1E1E]'}`}>
+                        {item}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
                   <TouchableOpacity
-                    key={item}
-                    onPress={() => {
-                      setAddName(item);
-                      setShowItemPicker(false);
-                    }}
-                    className={`p-4 ${index !== PREDEFINED_ITEMS.length - 1 ? 'border-b border-[#F0F0F0]' : ''} ${addName === item ? 'bg-[#F9F8FF]' : ''}`}>
-                    <Text
-                      className={`text-[14px] ${addName === item ? 'font-bold text-[#7370FF]' : 'text-[#1E1E1E]'}`}>
-                      {item}
-                    </Text>
+                    onPress={() => { setAddName(''); setShowItemPicker(false); }}
+                    className="bg-[#F5F5F7] p-4">
+                    <Text className="text-[14px] italic text-[#A3A3A3]">Reset selection...</Text>
                   </TouchableOpacity>
-                ))}
-                <TouchableOpacity
-                  onPress={() => {
-                    setAddName('');
-                    setShowItemPicker(false);
-                  }}
-                  className="bg-[#F5F5F7] p-4">
-                  <Text className="text-[14px] italic text-[#A3A3A3]">Reset selection...</Text>
-                </TouchableOpacity>
-              </View>
-            )}
+                </View>
+              )}              THIS IS FOR THE INPUT TYPE OF ITEM NAME ON THE ADD AN ITEM INVENTORY
+            */}
 
             <Text className="mb-2 text-[12px] font-bold text-[#1E1E1E]">Category</Text>
             <TextInput
@@ -479,7 +425,7 @@ export default function InventoryScreen({ projectId, onBack, userRole }: Props) 
               )}
             </TouchableOpacity>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* UPDATE ITEM MODAL */}
