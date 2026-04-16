@@ -46,7 +46,12 @@ function stockStatus(qty: string, critical: string): { label: string; bg: string
   return { label: 'In Stock', bg: '#5DBF50', text: 'white' };
 }
 
-const PREDEFINED_ITEMS = ['Cement', 'Extension Wire', 'Glass Panels', 'Welding Machine'];
+const PREDEFINED_ITEMS: Record<string, string> = {
+  'Cement': 'Materials',
+  'Extension Wire': 'Tools',
+  'Glass Panels': 'Materials',
+  'Welding Machine': 'Equipment',
+};
 
 export default function InventoryScreen({ projectId, onBack, userRole }: Props) {
   const perms = getPermissions(userRole);
@@ -54,6 +59,9 @@ export default function InventoryScreen({ projectId, onBack, userRole }: Props) 
   const canAdd = perms.canAddInventory;
   const [items, setItems] = useState<InventoryItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [selectedCategory, setSelectedCategory] = useState('All');
+
+  const categories = ['All', 'Materials', 'Equipment', 'Tools'];
 
   // Add modal
   const [showAdd, setShowAdd] = useState(false);
@@ -187,6 +195,43 @@ export default function InventoryScreen({ projectId, onBack, userRole }: Props) 
         <Text className="text-[32px] font-bold text-[#7370FF]">Inventory</Text>
       </View>
 
+      {/* Category Filter Bar */}
+      <View className="mb-6 h-[46px]">
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={{ paddingHorizontal: 20 }}>
+          {categories.map((cat) => {
+            const isSelected = selectedCategory === cat;
+            return (
+              <TouchableOpacity
+                key={cat}
+                onPress={() => setSelectedCategory(cat)}
+                className={`mr-3 items-center justify-center rounded-full px-6 ${
+                  isSelected ? 'bg-[#7370FF]' : 'border border-[#F0F0F0] bg-white'
+                }`}
+                style={
+                  isSelected
+                    ? {
+                        shadowColor: '#7370FF',
+                        shadowOpacity: 0.3,
+                        shadowRadius: 6,
+                        shadowOffset: { width: 0, height: 2 },
+                      }
+                    : {}
+                }>
+                <Text
+                  className={`text-[14px] font-bold ${
+                    isSelected ? 'text-white' : 'text-[#A3A3A3]'
+                  }`}>
+                  {cat}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+      </View>
+
       {/* ... rest of the content ... */}
 
 
@@ -214,100 +259,109 @@ export default function InventoryScreen({ projectId, onBack, userRole }: Props) 
           className="px-5"
           showsVerticalScrollIndicator={false}
           contentContainerStyle={{ paddingBottom: 120 }}>
-          {items.map((item) => {
-            const status = stockStatus(item.quantity, item.critical_level);
-            const catStyle = categoryColors[item.category] || { bg: '#F0F0F0', text: '#1E1E1E' };
+          {items
+            .filter((i) => selectedCategory === 'All' || i.category === selectedCategory)
+            .map((item) => {
+              const status = stockStatus(item.quantity, item.critical_level);
+              const catStyle = categoryColors[item.category] || { bg: '#F0F0F0', text: '#1E1E1E' };
 
-            return (
-              <View
-                key={item.id}
-                className="mb-5 rounded-[24px] border border-[#F0F0F0] bg-white p-6"
-                style={{
-                  shadowColor: '#000',
-                  shadowOpacity: 0.06,
-                  shadowRadius: 15,
-                  elevation: 3,
-                }}>
-                <View className="mb-5 flex-row items-center justify-between">
-                  <View className="flex-1 flex-row items-center">
-                    <Text className="mr-3 text-[20px] font-bold text-[#1E1E1E]">
-                      {item.item_name}
-                    </Text>
-                    <View className="rounded-md px-3 py-1" style={{ backgroundColor: status.bg }}>
-                      <Text className="text-[10px] font-bold uppercase text-white">
-                        {status.label}
+              const openActions = () => {
+                if (!canEdit) return;
+                Alert.alert(item.item_name, 'Choose action', [
+                  {
+                    text: 'Update',
+                    onPress: () => {
+                      setEditItem(item);
+                      setEditName(item.item_name);
+                      setEditQty(item.quantity);
+                    },
+                  },
+                  {
+                    text: 'Delete',
+                    style: 'destructive',
+                    onPress: () => handleDelete(item.id),
+                  },
+                  { text: 'Cancel', style: 'cancel' },
+                ]);
+              };
+
+              return (
+                <TouchableOpacity
+                  key={item.id}
+                  activeOpacity={0.7}
+                  onPress={openActions}
+                  className="mb-5 rounded-[24px] border border-[#F0F0F0] bg-white p-6"
+                  style={{
+                    shadowColor: '#000',
+                    shadowOpacity: 0.06,
+                    shadowRadius: 15,
+                    elevation: 3,
+                  }}>
+                  <View className="mb-5 flex-row items-center justify-between">
+                    <View className="flex-1 flex-row items-center">
+                      <Text className="mr-3 text-[20px] font-bold text-[#1E1E1E]">
+                        {item.item_name}
                       </Text>
+                      <View className="rounded-md px-3 py-1" style={{ backgroundColor: status.bg }}>
+                        <Text className="text-[10px] font-bold uppercase text-white">
+                          {status.label}
+                        </Text>
+                      </View>
                     </View>
+                    {canEdit && (
+                      <View>
+                        <Ionicons name="ellipsis-vertical" size={20} color="#B9B9B9" />
+                      </View>
+                    )}
                   </View>
-                  {canEdit && (
+
+                  <View className="flex-row justify-between">
                     <TouchableOpacity
-                      onPress={() =>
-                        Alert.alert(item.item_name, 'Choose action', [
-                          {
-                            text: 'Update',
-                            onPress: () => {
-                              setEditItem(item);
-                              setEditName(item.item_name);
-                              setEditQty(item.quantity);
-                            },
-                          },
-                          {
-                            text: 'Delete',
-                            style: 'destructive',
-                            onPress: () => handleDelete(item.id),
-                          },
-                          { text: 'Cancel', style: 'cancel' },
-                        ])
-                      }>
-                      <Ionicons name="ellipsis-vertical" size={20} color="#B9B9B9" />
+                      className="items-start"
+                      style={{ width: '25%' }}
+                      onPress={() => setSelectedCategory(item.category)}>
+                      <View
+                        className="mb-2 rounded-md px-2.5 py-1"
+                        style={{ backgroundColor: catStyle.bg }}>
+                        <Text className="text-[11px] font-bold" style={{ color: catStyle.text }}>
+                          {item.category}
+                        </Text>
+                      </View>
+                      <Text className="text-[10px] font-medium uppercase tracking-tight text-[#A3A3A3]">
+                        Category
+                      </Text>
                     </TouchableOpacity>
-                  )}
-                </View>
 
-                <View className="flex-row justify-between">
-                  <View className="items-start" style={{ width: '25%' }}>
-                    <View
-                      className="mb-2 rounded-md px-2.5 py-1"
-                      style={{ backgroundColor: catStyle.bg }}>
-                      <Text className="text-[11px] font-bold" style={{ color: catStyle.text }}>
-                        {item.category}
+                    <View className="items-center" style={{ width: '25%' }}>
+                      <Text className="mb-2 text-[13px] font-bold text-[#1E1E1E]">
+                        {item.quantity}
+                      </Text>
+                      <Text className="text-[10px] font-medium uppercase tracking-tight text-[#A3A3A3]">
+                        In Stock
                       </Text>
                     </View>
-                    <Text className="text-[10px] font-medium uppercase tracking-tight text-[#A3A3A3]">
-                      Category
-                    </Text>
-                  </View>
 
-                  <View className="items-center" style={{ width: '25%' }}>
-                    <Text className="mb-2 text-[13px] font-bold text-[#1E1E1E]">
-                      {item.quantity}
-                    </Text>
-                    <Text className="text-[10px] font-medium uppercase tracking-tight text-[#A3A3A3]">
-                      In Stock
-                    </Text>
-                  </View>
+                    <View className="items-center" style={{ width: '25%' }}>
+                      <Text className="mb-2 text-[13px] font-bold text-[#1E1E1E]">
+                        {item.critical_level}
+                      </Text>
+                      <Text className="text-[10px] font-medium uppercase tracking-tight text-[#A3A3A3]">
+                        Critical Level
+                      </Text>
+                    </View>
 
-                  <View className="items-center" style={{ width: '25%' }}>
-                    <Text className="mb-2 text-[13px] font-bold text-[#1E1E1E]">
-                      {item.critical_level}
-                    </Text>
-                    <Text className="text-[10px] font-medium uppercase tracking-tight text-[#A3A3A3]">
-                      Critical Level
-                    </Text>
+                    <View className="items-end" style={{ width: '25%' }}>
+                      <Text className="mb-2 text-[13px] font-bold text-[#1E1E1E]" numberOfLines={1}>
+                        {item.price}
+                      </Text>
+                      <Text className="text-[10px] font-medium uppercase tracking-tight text-[#A3A3A3]">
+                        Price
+                      </Text>
+                    </View>
                   </View>
-
-                  <View className="items-end" style={{ width: '25%' }}>
-                    <Text className="mb-2 text-[13px] font-bold text-[#1E1E1E]" numberOfLines={1}>
-                      {item.price}
-                    </Text>
-                    <Text className="text-[10px] font-medium uppercase tracking-tight text-[#A3A3A3]">
-                      Price
-                    </Text>
-                  </View>
-                </View>
-              </View>
-            );
-          })}
+                </TouchableOpacity>
+              );
+            })}
         </ScrollView>
       )}
 
@@ -333,56 +387,83 @@ export default function InventoryScreen({ projectId, onBack, userRole }: Props) 
             </View>
 
             <Text className="mb-2 text-[12px] font-bold text-[#1E1E1E]">Item Name</Text>
-            <TextInput
-              value={addName}
-              onChangeText={setAddName}
+            <TouchableOpacity
+              onPress={() => setShowItemPicker(!showItemPicker)}
               style={inputStyle}
-              placeholder="e.g. Cement, Glass Panels..."
-              placeholderTextColor="#A3A3A3"
-            />
-            {/* 
-              In case you want the dropdown picker back in the future, here is the code:
-              <TouchableOpacity
-                onPress={() => setShowItemPicker(!showItemPicker)}
-                style={inputStyle}
-                className="flex-row items-center justify-between">
-                <Text className={`text-[14px] ${addName ? 'text-[#1E1E1E]' : 'text-[#A3A3A3]'}`}>
-                  {addName || 'Select item...'}
-                </Text>
-                <Ionicons name={showItemPicker ? 'chevron-up' : 'chevron-down'} size={20} color="#7370FF" />
-              </TouchableOpacity>
+              className="flex-row items-center justify-between">
+              <Text className={`text-[14px] ${addName ? 'text-[#1E1E1E]' : 'text-[#A3A3A3]'}`}>
+                {addName || 'Select item...'}
+              </Text>
+              <Ionicons
+                name={showItemPicker ? 'chevron-up' : 'chevron-down'}
+                size={20}
+                color="#7370FF"
+              />
+            </TouchableOpacity>
 
-              {showItemPicker && (
-                <View className="mt-1 overflow-hidden rounded-[12px] border border-[#E7E7EE] bg-white shadow-sm">
-                  {PREDEFINED_ITEMS.map((item, index) => (
-                    <TouchableOpacity
-                      key={item}
-                      onPress={() => {
-                        setAddName(item);
-                        setShowItemPicker(false);
-                      }}
-                      className={`p-4 ${index !== PREDEFINED_ITEMS.length - 1 ? 'border-b border-[#F0F0F0]' : ''} ${addName === item ? 'bg-[#F9F8FF]' : ''}`}>
-                      <Text className={`text-[14px] ${addName === item ? 'font-bold text-[#7370FF]' : 'text-[#1E1E1E]'}`}>
-                        {item}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
+            {showItemPicker && (
+              <View className="z-50 mb-4 mt-1 overflow-hidden rounded-[12px] border border-[#E7E7EE] bg-white shadow-sm">
+                {Object.keys(PREDEFINED_ITEMS).map((item, index) => (
                   <TouchableOpacity
-                    onPress={() => { setAddName(''); setShowItemPicker(false); }}
-                    className="bg-[#F5F5F7] p-4">
-                    <Text className="text-[14px] italic text-[#A3A3A3]">Reset selection...</Text>
+                    key={item}
+                    onPress={() => {
+                      setAddName(item);
+                      setAddCategory(PREDEFINED_ITEMS[item]); // Auto-set category
+                      setShowItemPicker(false);
+                    }}
+                    className={`p-4 ${
+                      index !== Object.keys(PREDEFINED_ITEMS).length - 1
+                        ? 'border-b border-[#F0F0F0]'
+                        : ''
+                    } ${addName === item ? 'bg-[#F9F8FF]' : ''}`}>
+                    <Text
+                      className={`text-[14px] ${addName === item ? 'font-bold text-[#7370FF]' : 'text-[#1E1E1E]'}`}>
+                      {item}
+                    </Text>
                   </TouchableOpacity>
-                </View>
-              )}              THIS IS FOR THE INPUT TYPE OF ITEM NAME ON THE ADD AN ITEM INVENTORY
-            */}
+                ))}
+                <TouchableOpacity
+                  onPress={() => {
+                    setAddName('');
+                    setShowItemPicker(false);
+                  }}
+                  className="bg-[#F5F5F7] p-4 text-center">
+                  <Text className="text-[14px] italic text-[#A3A3A3]">Custom name...</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {!addName && !showItemPicker && (
+              <TextInput
+                value={addName}
+                onChangeText={setAddName}
+                style={inputStyle}
+                placeholder="Or type custom name..."
+                placeholderTextColor="#A3A3A3"
+              />
+            )}
 
             <Text className="mb-2 text-[12px] font-bold text-[#1E1E1E]">Category</Text>
-            <TextInput
-              value={addCategory}
-              onChangeText={setAddCategory}
-              style={inputStyle}
-              placeholder="Materials"
-            />
+            <View className="mb-4 flex-row">
+              {['Materials', 'Equipment', 'Tools'].map((cat) => {
+                const isSelected = addCategory === cat;
+                return (
+                  <TouchableOpacity
+                    key={cat}
+                    onPress={() => setAddCategory(cat)}
+                    className={`mr-2 rounded-full border px-4 py-2 ${
+                      isSelected ? 'border-[#7370FF] bg-[#F4F3FF]' : 'border-[#F0F0F0] bg-white'
+                    }`}>
+                    <Text
+                      className={`text-[12px] font-bold ${
+                        isSelected ? 'text-[#7370FF]' : 'text-[#A3A3A3]'
+                      }`}>
+                      {cat}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
 
             <Text className="mb-2 text-[12px] font-bold text-[#1E1E1E]">Price</Text>
             <TextInput

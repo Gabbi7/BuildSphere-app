@@ -105,7 +105,7 @@ export default function ProjectDetailScreen({ projectId, onBack, userRole }: Pro
 
   const badge = statusBadge(project.status);
   const days = daysLeft(project.end_date);
-  const progress = project.progress || 65;
+  const progress = project.progress || 0;
 
   return (
     <View className="flex-1 bg-white">

@@ -8,18 +8,26 @@ router.get('/', async (req, res) => {
   try {
     // In the screenshot, tasks has 'project' (text) and 'user_id' directly.
     const result = await pool.query(
-      `SELECT * FROM "public"."tasks" 
-       WHERE user_id = $1 
-       ORDER BY created_at DESC`,
+      `SELECT t.*, p.project_name as project 
+       FROM "public"."tasks" t
+       LEFT JOIN "public"."projects" p ON t.project_id = p.id
+       WHERE t.assigned_to = $1 AND t.deleted_at IS NULL
+       ORDER BY t.created_at DESC`,
       [userId]
     );
 
     // Normalize data for frontend (e.g., status mapping)
-    const normalized = result.rows.map(row => ({
-      ...row,
-      status: (row.status || '').replace('_', '-'), // in_progress -> in-progress
-      due_date: row.due_date ? new Date(row.due_date).toLocaleDateString() : row.due_date
-    }));
+    const normalized = result.rows.map(row => {
+      let status = (row.status || '').toLowerCase().replace('_', '-');
+      // Normalize 'todo' to 'pending' to match mobile frontend mapping
+      if (status === 'todo') status = 'pending';
+
+      return {
+        ...row,
+        status,
+        due_date: row.due_date ? new Date(row.due_date).toLocaleDateString() : row.due_date
+      };
+    });
 
     res.json(normalized);
   } catch (err) {
@@ -28,38 +36,78 @@ router.get('/', async (req, res) => {
   }
 });
 
+// GET /tasks/:taskId/progress
+router.get('/:taskId/progress', async (req, res) => {
+  const { taskId } = req.params;
+  console.log(`FETCHING PROGRESS FOR TASK: ${taskId}`);
+  try {
+    const result = await pool.query(
+      `SELECT 
+        tpl.*, 
+        u.first_name, 
+        u.last_name, 
+        u.role 
+       FROM task_progress_logs tpl
+       JOIN users u ON tpl.created_by = u.id
+       WHERE tpl.task_id = $1
+       ORDER BY tpl.created_at DESC`,
+      [taskId]
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to fetch task progress.' });
+  }
+});
+
+// GET /tasks/project/:projectId
+
+router.get('/project/:projectId', async (req, res) => {
+  const { projectId } = req.params;
+  try {
+    const result = await pool.query(
+      'SELECT id, title FROM tasks WHERE project_id = $1 AND deleted_at IS NULL ORDER BY title ASC',
+      [projectId]
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to fetch project tasks.' });
+  }
+});
+
+
+
 // POST /tasks
 router.post('/', async (req, res) => {
   const {
     title,
-    project,
+    project_id,
     due_date,
     status,
     priority,
     user_id,
     description,
-    assigned_to,
     phase,
     milestone,
     start_date,
   } = req.body;
 
-  if (!title || !project || !due_date || !user_id) {
-    return res.status(400).json({ error: 'Title, project, due date, and user ID are required.' });
+  if (!title || !project_id || !due_date || !user_id) {
+    return res.status(400).json({ error: 'Title, project ID, due date, and assigned user are required.' });
   }
 
   try {
     const result = await pool.query(
-      'INSERT INTO tasks (title, project, due_date, status, priority, user_id, description, assigned_to, phase, milestone, start_date) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING *',
+      'INSERT INTO tasks (title, project_id, due_date, status, priority, assigned_to, description, phase, milestone, start_date) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *',
       [
         title,
-        project,
+        project_id,
         due_date,
         status || 'pending',
         priority || 'medium',
-        user_id,
+        user_id, // Map frontend user_id to assigned_to
         description,
-        assigned_to,
         phase,
         milestone,
         start_date,
@@ -85,4 +133,6 @@ router.post('/', async (req, res) => {
   }
 });
 
+
 module.exports = router;
+

@@ -72,6 +72,15 @@ export default function Notifications({ userId }: NotificationsProps) {
     await fetch(`${API_URL}/notifications/${id}/read`, { method: 'PATCH' });
   };
 
+  const markAllRead = async () => {
+    setNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })));
+    // In a real app, you'd have an endpoint for this, but for now we loop or just update local
+    // Let's assume there's a batch endpoint or we just do it for the current list
+    notifications.forEach(async (n) => {
+      if (!n.is_read) await fetch(`${API_URL}/notifications/${n.id}/read`, { method: 'PATCH' });
+    });
+  };
+
   const filtered = filter === 'unread' ? notifications.filter((n) => !n.is_read) : notifications;
   const unreadCount = notifications.filter((n) => !n.is_read).length;
 
@@ -79,11 +88,18 @@ export default function Notifications({ userId }: NotificationsProps) {
     <View className="flex-1">
       <ScrollView className="flex-1 px-5" contentContainerStyle={{ paddingBottom: 160 }}>
         {/* Header */}
-        <View className="pb-4 pt-5">
-          <Text className="text-[24px] font-bold text-[#7370FF]">Notifications</Text>
-          <Text className="mt-1 text-[13px] text-[#A3A3A3]">
-            {loading ? 'Loading...' : unreadCount > 0 ? `${unreadCount} unread` : 'All caught up!'}
-          </Text>
+        <View className="flex-row items-center justify-between pb-4 pt-5">
+          <View>
+            <Text className="text-[24px] font-bold text-[#7370FF]">Notifications</Text>
+            <Text className="mt-1 text-[13px] text-[#A3A3A3]">
+              {loading ? 'Loading...' : unreadCount > 0 ? `${unreadCount} unread` : 'All caught up!'}
+            </Text>
+          </View>
+          {!loading && unreadCount > 0 && (
+            <TouchableOpacity onPress={markAllRead}>
+              <Text className="text-[12px] font-bold text-[#7370FF]">Mark all read</Text>
+            </TouchableOpacity>
+          )}
         </View>
 
         {/* All / Unread Toggle */}

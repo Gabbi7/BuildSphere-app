@@ -34,7 +34,7 @@ type Tab = 'To Do' | 'In Progress' | 'To Review' | 'Completed';
 const STATUS_MAP: Record<Tab, string> = {
   'To Do': 'pending',
   'In Progress': 'in-progress',
-  'To Review': 'to-review',
+  'To Review': 'in-review',
   Completed: 'completed',
 };
 

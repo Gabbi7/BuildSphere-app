@@ -48,7 +48,28 @@ router.patch('/:id', async (req, res) => {
       'UPDATE project_inventory_items SET item_name=$1, current_stock=$2, updated_at=NOW() WHERE id=$3 RETURNING *, current_stock AS quantity',
       [itemName, numQty, req.params.id]
     );
-    res.json(result.rows[0]);
+    const item = result.rows[0];
+
+    // Notification Trigger: Low Stock
+    if (numQty <= item.critical_level) {
+      // Find project PIC
+      const projectRes = await pool.query('SELECT project_in_charge_id, name FROM projects WHERE id = $1', [item.project_id]);
+      if (projectRes.rows.length > 0) {
+        const proj = projectRes.rows[0];
+        await pool.query(
+          'INSERT INTO notifications (type, title, message, time, user_id) VALUES ($1, $2, $3, $4, $5)',
+          [
+            'alert',
+            'Low Stock Alert',
+            `Item '${item.item_name}' in ${proj.name || 'Project'} is low (${numQty} left).`,
+            'Just now',
+            proj.project_in_charge_id,
+          ]
+        );
+      }
+    }
+
+    res.json(item);
   } catch (err) {
     console.error('Fetch PATCH error:', err);
     res.status(500).json({ error: 'Failed to update item.' });

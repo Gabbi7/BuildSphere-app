@@ -10,7 +10,11 @@ import {
   Image,
   Modal,
 } from 'react-native';
+import { Picker } from '@react-native-picker/picker';
 import { Ionicons } from '@expo/vector-icons';
+import DateTimePicker from '@react-native-community/datetimepicker';
+
+
 import * as ImagePicker from 'expo-image-picker';
 
 import { API_URL } from '../../lib/api';
@@ -35,26 +39,50 @@ const PRIMARY = '#7370FF';
 export default function UploadSiteProgressScreen({ visible, user, onClose, projects }: Props) {
   const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
   const [photoUri, setPhotoUri] = useState<string | null>(null);
-  const [projectName, setProjectName] = useState('');
-  const [partner, setPartner] = useState('');
-  const [milestone, setMilestone] = useState('');
-  const [location, setLocation] = useState('');
+  const [projectId, setProjectId] = useState<number | null>(null);
+  const [taskId, setTaskId] = useState<number | null>(null);
+  const [userTasks, setUserTasks] = useState<any[]>([]);
+  const [quantityInstalled, setQuantityInstalled] = useState('');
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
+  const [loadingTasks, setLoadingTasks] = useState(false);
+  const [isTaskModalVisible, setIsTaskModalVisible] = useState(false);
+  const [isShiftModalVisible, setIsShiftModalVisible] = useState(false);
+  const [shift, setShift] = useState('Morning');
+  const [workDate, setWorkDate] = useState(new Date());
+  const [showDatePicker, setShowDatePicker] = useState(false);
   const [glassCount, setGlassCount] = useState<number>(0);
+
 
   const reset = () => {
     setStep(1);
     setPhotoUri(null);
-    setProjectName('');
-    setPartner('');
-    setMilestone('');
-    setLocation('');
+    setProjectId(projects[0]?.id || null);
+    setTaskId(null);
+    setShift('Morning');
+    setWorkDate(new Date());
+    setQuantityInstalled('');
+
     setNotes('');
     setGlassCount(0);
     setSaving(false);
   };
+
+  React.useEffect(() => {
+    setLoadingTasks(true);
+    fetch(`${API_URL}/tasks?userId=${user.id}`)
+      .then((res) => res.json())
+      .then((data) => {
+        setUserTasks(data);
+        if (data.length > 0) {
+          setTaskId(data[0].id);
+          setProjectId(data[0].project_id);
+        }
+      })
+      .catch((err) => console.error('Error fetching user tasks:', err))
+      .finally(() => setLoadingTasks(false));
+  }, [user.id]);
 
   const handleClose = () => {
     reset();
@@ -143,20 +171,29 @@ export default function UploadSiteProgressScreen({ visible, user, onClose, proje
   };
 
   const handleSave = async () => {
-    if (!projectName.trim()) {
-      Alert.alert('Missing info', 'Please enter a project name.');
+    if (!projectId || !taskId) {
+      Alert.alert('Missing info', 'Please select a project and a task.');
       return;
     }
     setSaving(true);
     try {
       const formData = new FormData();
-      formData.append('projectName', projectName);
-      formData.append('partner', partner);
-      formData.append('milestone', milestone);
-      formData.append('location', location);
-      formData.append('notes', notes);
-      formData.append('userId', user.id.toString());
+      formData.append('projectId', projectId.toString());
+      formData.append('taskId', taskId.toString());
       formData.append('glassCount', glassCount.toString());
+      formData.append('shift', shift);
+      
+      // Use local date string (YYYY-MM-DD) to avoid UTC timezone shifts
+      const year = workDate.getFullYear();
+      const month = String(workDate.getMonth() + 1).padStart(2, '0');
+      const day = String(workDate.getDate()).padStart(2, '0');
+      const formattedDate = `${year}-${month}-${day}`;
+      
+      formData.append('workDate', formattedDate);
+      formData.append('notes', notes);
+
+      formData.append('userId', user.id.toString());
+
 
       if (photoUri) {
         const filename = photoUri.split('/').pop() || 'photo.jpg';
@@ -246,43 +283,101 @@ export default function UploadSiteProgressScreen({ visible, user, onClose, proje
                   </>
                 )}
               </TouchableOpacity>
+              
+              <Text className="mb-1 text-[12px] font-semibold text-[#2D2D2D]">Task</Text>
+              <TouchableOpacity
+                onPress={() => setIsTaskModalVisible(true)}
+                className="mb-4 flex-row items-center justify-between rounded-xl border border-[#E7E7EE] bg-[#FAFAFA] px-4"
+                style={{ height: 50 }}>
+                <Text style={{ color: taskId ? '#1E1E1E' : '#C0C0C0' }}>
+                  {loadingTasks ? 'Loading tasks...' : (userTasks.find(t => String(t.id) === String(taskId))?.title || 'Select a task')}
+                </Text>
+                <Ionicons name="chevron-down" size={20} color="#777" />
+              </TouchableOpacity>
 
-              <Text className="mb-1 text-[12px] font-semibold text-[#2D2D2D]">From</Text>
-              <TextInput
-                value={partner}
-                onChangeText={setPartner}
-                style={inputStyle}
-                placeholder="Your name / company"
-                placeholderTextColor="#C0C0C0"
-              />
+              {/* Shift Dropdown */}
+              <Text className="mb-1 text-[12px] font-semibold text-[#2D2D2D]">Shift</Text>
+              <TouchableOpacity
+                onPress={() => setIsShiftModalVisible(true)}
+                className="mb-4 flex-row items-center justify-between rounded-xl border border-[#E7E7EE] bg-[#FAFAFA] px-4"
+                style={{ height: 50 }}>
+                <Text style={{ color: '#1E1E1E' }}>{shift}</Text>
+                <Ionicons name="chevron-down" size={20} color="#777" />
+              </TouchableOpacity>
 
-              <Text className="mb-1 text-[12px] font-semibold text-[#2D2D2D]">Location</Text>
-              <TextInput
-                value={location}
-                onChangeText={setLocation}
-                style={inputStyle}
-                placeholder="Site location"
-                placeholderTextColor="#C0C0C0"
-              />
+              {/* Date Picker */}
+              <Text className="mb-1 text-[12px] font-semibold text-[#2D2D2D]">Work Date</Text>
+              <TouchableOpacity
+                onPress={() => setShowDatePicker(true)}
+                className="mb-4 flex-row items-center justify-between rounded-xl border border-[#E7E7EE] bg-[#FAFAFA] px-4"
+                style={{ height: 50 }}>
+                <Text style={{ color: '#1E1E1E' }}>{workDate.toDateString()}</Text>
+                <Ionicons name="calendar-outline" size={20} color="#777" />
+              </TouchableOpacity>
 
-              <Text className="mb-1 text-[12px] font-semibold text-[#2D2D2D]">Milestone</Text>
-              <TextInput
-                value={milestone}
-                onChangeText={setMilestone}
-                style={inputStyle}
-                placeholder="e.g. Foundation complete"
-                placeholderTextColor="#C0C0C0"
-              />
+              {showDatePicker && (
+                <DateTimePicker
+                  value={workDate}
+                  mode="date"
+                  display="default"
+                  onChange={(event, selectedDate) => {
+                    setShowDatePicker(false);
+                    if (selectedDate) setWorkDate(selectedDate);
+                  }}
+                />
+              )}
 
-              <Text className="mb-1 text-[12px] font-semibold text-[#2D2D2D]">Notes</Text>
+
+
+              {/* Glass Panels Count (Editable) */}
+              <View className="mt-8 mb-6 rounded-2xl border border-[#D3D0FF] bg-[#F8F7FF] p-4">
+
+                <View className="flex-row items-center justify-between mb-4">
+                  <View className="flex-row items-center">
+                    <View className="mr-3 h-10 w-10 items-center justify-center rounded-full bg-[#EAE8FF]">
+                      <Ionicons name="apps" size={20} color={PRIMARY} />
+                    </View>
+                    <Text className="text-[14px] font-semibold text-[#1E1E1E]">
+                      Glass Panels Count
+                    </Text>
+                  </View>
+                </View>
+                
+                <View className="flex-row items-center justify-between bg-white rounded-xl border border-[#E0E0E0] p-3">
+                  <TouchableOpacity 
+                    onPress={() => setGlassCount(Math.max(0, glassCount - 1))}
+                    className="h-10 w-10 items-center justify-center rounded-full bg-gray-100">
+                      <Ionicons name="remove" size={24} color={PRIMARY} />
+                  </TouchableOpacity>
+                  
+                  <TextInput
+                    value={String(glassCount)}
+                    onChangeText={(v) => setGlassCount(parseInt(v) || 0)}
+                    keyboardType="numeric"
+                    className="text-[24px] font-bold text-[#7370FF] text-center"
+                    style={{ minWidth: 60 }}
+                  />
+                  
+                  <TouchableOpacity 
+                    onPress={() => setGlassCount(glassCount + 1)}
+                    className="h-10 w-10 items-center justify-center rounded-full bg-[#7370FF]">
+                      <Ionicons name="add" size={24} color="white" />
+                  </TouchableOpacity>
+                </View>
+                <Text className="mt-2 text-center text-[10px] text-gray-400">Verify and adjust the count above</Text>
+              </View>
+
+              <Text className="mb-1 text-[12px] font-semibold text-[#2D2D2D]">Notes / Comments</Text>
               <TextInput
                 value={notes}
                 onChangeText={setNotes}
                 style={{ ...inputStyle, height: 80, textAlignVertical: 'top', paddingTop: 12 }}
-                placeholder="Additional notes..."
+                placeholder="Add comments about progress..."
                 placeholderTextColor="#C0C0C0"
                 multiline
               />
+
+
             </ScrollView>
 
             {/* Footer Buttons */}
@@ -376,36 +471,66 @@ export default function UploadSiteProgressScreen({ visible, user, onClose, proje
             )}
 
             <ScrollView className="flex-1 px-5 pt-5" contentContainerStyle={{ paddingBottom: 40 }}>
-              <Text className="mb-1 text-[12px] font-semibold text-[#2D2D2D]">Project name</Text>
-              <TextInput
-                value={projectName}
-                onChangeText={setProjectName}
-                style={inputStyle}
-                placeholder="Enter project name"
-                placeholderTextColor="#C0C0C0"
-              />
+              <Text className="mb-1 text-[12px] font-semibold text-[#2D2D2D]">Task</Text>
+              <TouchableOpacity
+                onPress={() => setIsTaskModalVisible(true)}
+                className="mb-4 flex-row items-center justify-between rounded-xl border border-[#E7E7EE] bg-[#FAFAFA] px-4"
+                style={{ height: 50 }}>
+                <Text style={{ color: taskId ? '#1E1E1E' : '#C0C0C0' }}>
+                  {loadingTasks ? 'Loading...' : (userTasks.find(t => String(t.id) === String(taskId))?.title || 'Select a task')}
+                </Text>
+                <Ionicons name="chevron-down" size={20} color="#777" />
+              </TouchableOpacity>
 
-              <Text className="mb-1 text-[12px] font-semibold text-[#2D2D2D]">Partner (from)</Text>
-              <TextInput
-                value={partner}
-                onChangeText={setPartner}
-                style={inputStyle}
-                placeholder="Your name / company"
-                placeholderTextColor="#C0C0C0"
-              />
+              {/* Shift Dropdown */}
+              <Text className="mb-1 text-[12px] font-semibold text-[#2D2D2D]">Shift</Text>
+              <TouchableOpacity
+                onPress={() => setIsShiftModalVisible(true)}
+                className="mb-4 flex-row items-center justify-between rounded-xl border border-[#E7E7EE] bg-[#FAFAFA] px-4"
+                style={{ height: 50 }}>
+                <Text style={{ color: '#1E1E1E' }}>{shift}</Text>
+                <Ionicons name="chevron-down" size={20} color="#777" />
+              </TouchableOpacity>
 
-              <Text className="mb-1 text-[12px] font-semibold text-[#2D2D2D]">Notes</Text>
+              {/* Date Picker */}
+              <Text className="mb-1 text-[12px] font-semibold text-[#2D2D2D]">Work Date</Text>
+              <TouchableOpacity
+                onPress={() => setShowDatePicker(true)}
+                className="mb-4 flex-row items-center justify-between rounded-xl border border-[#E7E7EE] bg-[#FAFAFA] px-4"
+                style={{ height: 50 }}>
+                <Text style={{ color: '#1E1E1E' }}>{workDate.toDateString()}</Text>
+                <Ionicons name="calendar-outline" size={20} color="#777" />
+              </TouchableOpacity>
+
+              {showDatePicker && (
+                <DateTimePicker
+                  value={workDate}
+                  mode="date"
+                  display="default"
+                  onChange={(event, selectedDate) => {
+                    setShowDatePicker(false);
+                    if (selectedDate) setWorkDate(selectedDate);
+                  }}
+                />
+              )}
+
+
+
+
+
+              <Text className="mb-1 text-[12px] font-semibold text-[#2D2D2D]">Notes / Comments</Text>
               <TextInput
                 value={notes}
                 onChangeText={setNotes}
                 style={{ ...inputStyle, height: 100, textAlignVertical: 'top', paddingTop: 12 }}
-                placeholder="Add notes about this progress update..."
+                placeholder="Add comments about progress..."
                 placeholderTextColor="#C0C0C0"
                 multiline
               />
 
               {/* Glass Count Display */}
-              <View className="mb-6 rounded-2xl border border-[#D3D0FF] bg-[#F8F7FF] p-4">
+              <View className="mt-8 mb-6 rounded-2xl border border-[#D3D0FF] bg-[#F8F7FF] p-4">
+
                 <View className="flex-row items-center justify-between mb-4">
                   <View className="flex-row items-center">
                     <View className="mr-3 h-10 w-10 items-center justify-center rounded-full bg-[#EAE8FF]">
@@ -424,7 +549,13 @@ export default function UploadSiteProgressScreen({ visible, user, onClose, proje
                       <Ionicons name="remove" size={24} color={PRIMARY} />
                   </TouchableOpacity>
                   
-                  <Text className="text-[24px] font-bold text-[#7370FF]">{glassCount}</Text>
+                  <TextInput
+                    value={String(glassCount)}
+                    onChangeText={(v) => setGlassCount(parseInt(v) || 0)}
+                    keyboardType="numeric"
+                    className="text-[24px] font-bold text-[#7370FF] text-center"
+                    style={{ minWidth: 60 }}
+                  />
                   
                   <TouchableOpacity 
                     onPress={() => setGlassCount(glassCount + 1)}
@@ -432,8 +563,9 @@ export default function UploadSiteProgressScreen({ visible, user, onClose, proje
                       <Ionicons name="add" size={24} color="white" />
                   </TouchableOpacity>
                 </View>
-                <Text className="mt-2 text-center text-[10px] text-gray-400">Verfiy and adjust the AI suggestion above</Text>
+                <Text className="mt-2 text-center text-[10px] text-gray-400">Verify and adjust the count above</Text>
               </View>
+
             </ScrollView>
 
             <View className="border-t border-[#F0F0F0] px-5 pb-10 pt-3">
@@ -472,8 +604,7 @@ export default function UploadSiteProgressScreen({ visible, user, onClose, proje
               Site progress uploaded!
             </Text>
             <Text className="mb-10 text-center text-[14px] leading-6 text-[#A3A3A3]">
-              Photo(s) uploaded and added to{'\n'}
-              <Text className="font-semibold text-[#1E1E1E]">{projectName}</Text> site updates.
+              Photo(s) uploaded and progress recorded successfully.
             </Text>
 
             <TouchableOpacity
@@ -485,6 +616,79 @@ export default function UploadSiteProgressScreen({ visible, user, onClose, proje
           </View>
         )}
       </View>
+
+      {/* ── Task Selection Modal ── */}
+      <Modal visible={isTaskModalVisible} animationType="slide" transparent>
+        <View className="flex-1 justify-end bg-black/40">
+          <View className="h-[60%] w-full rounded-t-[30px] bg-white p-6">
+            <View className="mb-6 flex-row items-center justify-between">
+              <Text className="text-[18px] font-bold text-[#1E1E1E]">Select Task</Text>
+              <TouchableOpacity onPress={() => setIsTaskModalVisible(false)}>
+                <Ionicons name="close" size={24} color="#1E1E1E" />
+              </TouchableOpacity>
+            </View>
+
+            {loadingTasks ? (
+              <ActivityIndicator color={PRIMARY} />
+            ) : userTasks.length === 0 ? (
+              <Text className="text-center text-gray-500 py-10">No tasks assigned to you yet.</Text>
+            ) : (
+              <ScrollView>
+                {userTasks.map((t) => (
+                  <TouchableOpacity
+                    key={t.id}
+                    onPress={() => {
+                      setTaskId(t.id);
+                      setProjectId(t.project_id);
+                      setIsTaskModalVisible(false);
+                    }}
+                    className="mb-3 flex-row items-center rounded-xl border border-[#F0F0F0] p-4 bg-[#FAFAFA]">
+                    <View className="mr-3 h-8 w-8 items-center justify-center rounded-full bg-[#EAE8FF]">
+                      <Ionicons name="clipboard-outline" size={16} color={PRIMARY} />
+                    </View>
+                    <View className="flex-1">
+                      <Text className="text-[14px] font-semibold text-[#1E1E1E]">{t.title}</Text>
+                      <Text className="text-[12px] text-gray-500">{t.project || 'No Project'}</Text>
+                    </View>
+                    {String(taskId) === String(t.id) && (
+                      <Ionicons name="checkmark-circle" size={20} color={PRIMARY} />
+                    )}
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            )}
+          </View>
+        </View>
+      </Modal>
+
+      {/* ── Shift Selection Modal ── */}
+      <Modal visible={isShiftModalVisible} animationType="slide" transparent>
+        <View className="flex-1 justify-end bg-black/40">
+          <View className="h-[40%] w-full rounded-t-[30px] bg-white p-6">
+            <View className="mb-6 flex-row items-center justify-between">
+              <Text className="text-[18px] font-bold text-[#1E1E1E]">Select Shift</Text>
+              <TouchableOpacity onPress={() => setIsShiftModalVisible(false)}>
+                <Ionicons name="close" size={24} color="#1E1E1E" />
+              </TouchableOpacity>
+            </View>
+
+            {['Morning', 'Afternoon', 'Noon'].map((item) => (
+              <TouchableOpacity
+                key={item}
+                onPress={() => {
+                  setShift(item);
+                  setIsShiftModalVisible(false);
+                }}
+                className="mb-3 flex-row items-center rounded-xl border border-[#F0F0F0] p-4 bg-[#FAFAFA]">
+                <Text className="flex-1 text-[14px] font-semibold text-[#1E1E1E]">{item}</Text>
+                {shift === item && <Ionicons name="checkmark-circle" size={20} color={PRIMARY} />}
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+      </Modal>
+
     </Modal>
+
   );
 }

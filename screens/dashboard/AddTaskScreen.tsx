@@ -50,7 +50,7 @@ export default function AddTaskScreen({
 
   // Form Stats
   const [title, setTitle] = useState('');
-  const [selectedProject, setSelectedProject] = useState(projects[0]?.name || '');
+  const [selectedProjectId, setSelectedProjectId] = useState<number | null>(projects[0]?.id || null);
   const [phase, setPhase] = useState('');
   const [milestone, setMilestone] = useState('');
 
@@ -62,7 +62,7 @@ export default function AddTaskScreen({
   const [endDate, setEndDate] = useState('');
 
   const handleNext = () => {
-    if (!title.trim() || !selectedProject) {
+    if (!title.trim() || !selectedProjectId) {
       Alert.alert('Missing Info', 'Task Title and Project are required.');
       return;
     }
@@ -82,7 +82,7 @@ export default function AddTaskScreen({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           title,
-          project: selectedProject,
+          project_id: selectedProjectId,
           due_date: endDate,
           status: 'pending',
           priority: priority.toLowerCase(),
@@ -118,7 +118,7 @@ export default function AddTaskScreen({
   const resetForm = () => {
     setStep(1);
     setTitle('');
-    setPhase('');
+    setSelectedProjectId(projects[0]?.id || null);
     setMilestone('');
     setDescription('');
     setAssignedTo('');
@@ -175,11 +175,11 @@ export default function AddTaskScreen({
                 <Text className="mb-2 text-[12px] font-semibold text-[#2D2D2D]">Project</Text>
                 <View className="mb-5 overflow-hidden rounded-xl border border-[#F0F0F0] bg-[#F9F9F9]">
                   <Picker
-                    selectedValue={selectedProject}
-                    onValueChange={(v) => setSelectedProject(v)}
+                    selectedValue={selectedProjectId}
+                    onValueChange={(v) => setSelectedProjectId(v)}
                     style={{ height: 52 }}>
                     {projects.map((p) => (
-                      <Picker.Item key={p.id} label={p.name} value={p.name} />
+                      <Picker.Item key={p.id} label={p.name} value={p.id} />
                     ))}
                   </Picker>
                 </View>

@@ -14,7 +14,7 @@ export default function ProjectCard({
   name,
   location,
   color,
-  progress = 60,
+  progress = 0,
   image,
   onAction,
 }: ProjectCardProps) {

@@ -58,7 +58,7 @@ export default function DashboardScreen({
   const [selectedTask, setSelectedTask] = useState<any>(null);
   const [projectActionModal, setProjectActionModal] = useState<Project | null>(null);
 
-  // ─── RBAC: Filtered FAB Actions ──────────────────────────────────────────
+  // RBAC: Filtered FAB Actions 
   const perms = useMemo(() => getPermissions(user.role), [user.role]);
 
   const FAB_ACTIONS = useMemo(() => {
@@ -82,19 +82,19 @@ export default function DashboardScreen({
       'Are you sure you want to delete this project? This action cannot be undone.',
       [
         { text: 'Cancel', style: 'cancel' },
-        { 
-          text: 'Delete', 
+        {
+          text: 'Delete',
           style: 'destructive',
           onPress: async () => {
-             try {
-               const res = await fetch(`${API_URL}/projects/${projectId}`, { method: 'DELETE' });
-               if (res.ok) {
-                 setProjects(prev => prev.filter(p => p.id !== projectId));
-                 setProjectActionModal(null);
-               }
-             } catch (err) {
-               Alert.alert('Error', 'Failed to delete project.');
-             }
+            try {
+              const res = await fetch(`${API_URL}/projects/${projectId}`, { method: 'DELETE' });
+              if (res.ok) {
+                setProjects(prev => prev.filter(p => p.id !== projectId));
+                setProjectActionModal(null);
+              }
+            } catch (err) {
+              Alert.alert('Error', 'Failed to delete project.');
+            }
           }
         }
       ]
@@ -111,6 +111,26 @@ export default function DashboardScreen({
       setActiveTab('mywork');
     }
   }, [perms.canViewDashboard, activeTab]);
+
+  const [unreadCount, setUnreadCount] = useState(0);
+
+  const fetchNotificationCount = () => {
+    fetch(`${API_URL}/notifications?userId=${user.id}`)
+      .then((res) => res.json())
+      .then((data) => {
+        if (Array.isArray(data)) {
+          const unread = data.filter((n: any) => !n.is_read).length;
+          setUnreadCount(unread);
+        }
+      })
+      .catch((err) => console.error('Notif Count Fetch Error:', err));
+  };
+
+  useEffect(() => {
+    fetchNotificationCount();
+    const interval = setInterval(fetchNotificationCount, 30000); // Polling every 30s
+    return () => clearInterval(interval);
+  }, [user.id]);
 
   useEffect(() => {
     fetch(`${API_URL}/projects`)
@@ -333,12 +353,24 @@ export default function DashboardScreen({
           </TouchableOpacity>
           <TouchableOpacity
             className={`items-center rounded-full p-2 px-4 ${activeTab === 'notifications' ? 'bg-[#EAE8FF]' : ''}`}
-            onPress={() => setActiveTab('notifications')}>
-            <Ionicons
-              name="notifications-outline"
-              size={24}
-              color={activeTab === 'notifications' ? '#6C63FF' : '#9A9A9A'}
-            />
+            onPress={() => {
+              setActiveTab('notifications');
+              setUnreadCount(0); // Reset local count when viewing
+            }}>
+            <View>
+              <Ionicons
+                name="notifications-outline"
+                size={24}
+                color={activeTab === 'notifications' ? '#6C63FF' : '#9A9A9A'}
+              />
+              {unreadCount > 0 && (
+                <View className="absolute -right-1 -top-1 h-4 w-4 items-center justify-center rounded-full bg-[#FF6B6B]">
+                  <Text className="text-[10px] font-bold text-white">
+                    {unreadCount > 9 ? '9+' : unreadCount}
+                  </Text>
+                </View>
+              )}
+            </View>
             <Text
               className={`mt-1 text-[10px] ${activeTab === 'notifications' ? 'font-bold text-[#6C63FF]' : 'text-[#9A9A9A]'}`}>
               Notification
@@ -372,14 +404,19 @@ export default function DashboardScreen({
         onClose={() => setShowAddTask(false)}
         userId={user.id}
         projects={projects}
-        onTaskAdded={() => {}}
+        onTaskAdded={() => { }}
       />
       <TaskDetailScreen
         visible={!!selectedTask}
         task={selectedTask}
         userRole={user.role}
         onClose={() => setSelectedTask(null)}
+        onNavigate={(tab) => {
+          setSelectedTask(null);
+          setActiveTab(tab);
+        }}
         onViewInventory={(projectId) => {
+
           setSelectedTask(null);
           setInventoryProjectId(projectId);
           setShowInventory(true);
@@ -397,24 +434,24 @@ export default function DashboardScreen({
         transparent={true}
         animationType="slide"
         onRequestClose={() => setProjectActionModal(null)}>
-        <TouchableOpacity 
-          activeOpacity={1} 
-          onPress={() => setProjectActionModal(null)} 
+        <TouchableOpacity
+          activeOpacity={1}
+          onPress={() => setProjectActionModal(null)}
           className="flex-1 justify-end bg-black/40">
           <View className="rounded-t-[30px] bg-white p-6 pb-12">
             <View className="mb-6 h-1 w-10 self-center rounded-full bg-gray-300" />
             <Text className="mb-4 text-center text-lg font-bold text-[#1E1E1E]">
               {projectActionModal?.name}
             </Text>
-            
-            <TouchableOpacity 
+
+            <TouchableOpacity
               onPress={() => setProjectActionModal(null)}
               className="flex-row items-center py-4 border-b border-gray-50">
               <Ionicons name="create-outline" size={22} color="#7370FF" />
               <Text className="ml-4 text-[16px] text-[#2D2D2D]">Edit Project</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity 
+            <TouchableOpacity
               onPress={() => deleteProject(projectActionModal!.id)}
               className="flex-row items-center py-4">
               <Ionicons name="trash-outline" size={22} color="#FF6B6B" />
