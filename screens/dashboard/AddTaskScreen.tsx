@@ -60,6 +60,7 @@ export default function AddTaskScreen({
   const [priority, setPriority] = useState('High');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
+  const [shift, setShift] = useState('Morning');
 
   const handleNext = () => {
     if (!title.trim() || !selectedProjectId) {
@@ -92,6 +93,7 @@ export default function AddTaskScreen({
           phase,
           milestone,
           start_date: startDate,
+          shift,
         }),
       });
 
@@ -125,6 +127,7 @@ export default function AddTaskScreen({
     setPriority('High');
     setStartDate('');
     setEndDate('');
+    setShift('Morning');
   };
 
   if (step === 'success') {
@@ -250,6 +253,20 @@ export default function AddTaskScreen({
                     <Picker.Item label="High" value="High" />
                     <Picker.Item label="Medium" value="Medium" />
                     <Picker.Item label="Low" value="Low" />
+                  </Picker>
+                </View>
+
+                <Text className="mb-2 text-[12px] font-semibold text-[#2D2D2D]">
+                  Shift
+                </Text>
+                <View className="mb-5 overflow-hidden rounded-xl border border-[#F0F0F0] bg-[#F9F9F9]">
+                  <Picker
+                    selectedValue={shift}
+                    onValueChange={(v) => setShift(v)}
+                    style={{ height: 52 }}>
+                    <Picker.Item label="Morning" value="Morning" />
+                    <Picker.Item label="Noon" value="Noon" />
+                    <Picker.Item label="Afternoon" value="Afternoon" />
                   </Picker>
                 </View>
 

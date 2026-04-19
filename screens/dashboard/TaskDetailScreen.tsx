@@ -8,7 +8,10 @@ import {
   Modal,
   Image,
   ActivityIndicator,
+  Animated,
+  Alert,
 } from 'react-native';
+import { useRef } from 'react';
 
 import { Ionicons } from '@expo/vector-icons';
 import { getPermissions, type UserRole } from '../../constants/roles';
@@ -22,6 +25,8 @@ interface TaskDetailScreenProps {
   userRole?: UserRole;
   onViewInventory?: (projectId: number) => void;
   onNavigate?: (tab: 'home' | 'mywork' | 'notifications' | 'more') => void;
+  onAddProgress?: (task: any) => void;
+  onAddTask?: () => void;
 }
 
 
@@ -42,7 +47,9 @@ export default function TaskDetailScreen({
   onClose,
   userRole,
   onViewInventory,
-  onNavigate
+  onNavigate,
+  onAddProgress,
+  onAddTask
 }: TaskDetailScreenProps) {
   const [history, setHistory] = useState<any[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
@@ -50,7 +57,19 @@ export default function TaskDetailScreen({
   const [showImageModal, setShowImageModal] = useState(false);
   const [selectedHistoryItem, setSelectedHistoryItem] = useState<any>(null);
   const [showActionMenu, setShowActionMenu] = useState(false);
+  const [fabOpen, setFabOpen] = useState(false);
+  const fabAnim = useRef(new Animated.Value(0)).current;
+  const [currentShift, setCurrentShift] = useState(task?.shift || 'Morning');
+  const [showShiftModal, setShowShiftModal] = useState(false);
 
+
+  useEffect(() => {
+    if (task?.shift) {
+      setCurrentShift(task.shift);
+    } else {
+      setCurrentShift('Morning');
+    }
+  }, [task?.id, task?.shift]);
 
   useEffect(() => {
     if (visible && task?.id) {
@@ -85,6 +104,18 @@ export default function TaskDetailScreen({
   const statusStyle = getStatusStyle(task.status);
   const comments: Comment[] = [];
   const priorityColor = task.priority?.toLowerCase() === 'high' ? '#FF6B6B' : '#FFA500';
+
+  const toggleFab = () => {
+    const toValue = fabOpen ? 0 : 1;
+    Animated.spring(fabAnim, { toValue, useNativeDriver: true, friction: 6 }).start();
+    setFabOpen(!fabOpen);
+  };
+
+  const FAB_ACTIONS = [
+    { label: 'Add new task', icon: 'add-circle-outline', key: 'task' },
+    { label: 'Update inventory', icon: 'cube-outline', key: 'inventory' },
+    { label: 'Upload Site Progress', icon: 'cloud-upload-outline', key: 'site' },
+  ];
 
   return (
     <Modal visible={visible} animationType="slide" transparent={false}>
@@ -146,7 +177,7 @@ export default function TaskDetailScreen({
             </View>
 
             {/* Row 2: Dates */}
-            <View className="flex-row">
+            <View className="mb-6 flex-row">
               <View className="flex-1">
                 <Text className="mb-1 text-[12px] font-medium text-[#A3A3A3]">Start Date</Text>
                 <Text className="text-[15px] font-bold text-[#1E1E1E]">
@@ -159,6 +190,28 @@ export default function TaskDetailScreen({
                   {task.due_date ? new Date(task.due_date).toLocaleDateString() : '02/28/2026'}
                 </Text>
               </View>
+            </View>
+
+            {/* Row 3: Shift/Time of Day — Tappable */}
+            <View className="flex-row">
+              <TouchableOpacity className="flex-1" onPress={() => setShowShiftModal(true)}>
+                <Text className="mb-1 text-[12px] font-medium text-[#A3A3A3]">Shift</Text>
+                <View className="flex-row items-center rounded-lg bg-[#F8F7FF] px-3 py-2 self-start border border-[#E8E6FF]">
+                  <Ionicons 
+                    name={
+                      currentShift.toLowerCase() === 'afternoon' ? 'partly-sunny-outline' : 
+                      currentShift.toLowerCase() === 'noon' ? 'sunny-outline' :
+                      'partly-sunny-outline'
+                    } 
+                    size={16} 
+                    color={PRIMARY} 
+                  />
+                  <Text className="ml-1.5 text-[15px] font-bold text-[#1E1E1E]">
+                    {currentShift}
+                  </Text>
+                  <Ionicons name="chevron-down" size={14} color="#A3A3A3" style={{ marginLeft: 6 }} />
+                </View>
+              </TouchableOpacity>
             </View>
 
           </View>
@@ -219,18 +272,28 @@ export default function TaskDetailScreen({
                                 + {item.quantity_accomplished} units
                               </Text>
                             </View>
+                            {item.shift && (
+                              <View className="ml-2 bg-[#F0F2FF] px-2 py-0.5 rounded-full border border-[#D0D7FF]">
+                                <Text className="text-[10px] font-bold text-[#7370FF]">
+                                  {item.shift}
+                                </Text>
+                              </View>
+                            )}
                           </View>
-                          <View className="flex-row items-center opacity-30">
-                            <Ionicons name="time-outline" size={14} color="#1E1E1E" />
-                            <TouchableOpacity 
-                              onPress={() => {
-                                setSelectedHistoryItem(item);
-                                setShowActionMenu(true);
-                              }}
-                              className="ml-2">
-                              <Ionicons name="ellipsis-horizontal" size={14} color="#1E1E1E" />
-                            </TouchableOpacity>
-                          </View>
+                            <View className="flex-row items-center opacity-30">
+                              <Ionicons name="time-outline" size={14} color="#1E1E1E" />
+                              <Text className="ml-1 text-[10px] text-[#A3A3A3]">
+                                {item.shift || 'Log'}
+                              </Text>
+                              <TouchableOpacity 
+                                onPress={() => {
+                                  setSelectedHistoryItem(item);
+                                  setShowActionMenu(true);
+                                }}
+                                className="ml-2">
+                                <Ionicons name="ellipsis-horizontal" size={14} color="#1E1E1E" />
+                              </TouchableOpacity>
+                            </View>
 
                         </View>
 
@@ -335,6 +398,93 @@ export default function TaskDetailScreen({
           </TouchableOpacity>
         </View>
 
+        {/* FAB Backdrop */}
+        {fabOpen && (
+          <TouchableOpacity
+            className="absolute inset-0 z-20"
+            onPress={toggleFab}
+            activeOpacity={1}
+            style={{ backgroundColor: 'rgba(255, 255, 255, 0.7)' }}
+          />
+        )}
+
+        {/* FAB Menu Items */}
+        {fabOpen && (
+          <View className="absolute bottom-[160px] right-5 items-end z-30">
+            {FAB_ACTIONS.map((action, index) => (
+              <Animated.View
+                key={action.label}
+                style={{
+                  opacity: fabAnim,
+                  transform: [
+                    {
+                      translateY: fabAnim.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: [20 * (FAB_ACTIONS.length - index), 0],
+                      }),
+                    },
+                  ],
+                  marginBottom: 10,
+                }}>
+                <TouchableOpacity
+                  onPress={() => {
+                    toggleFab();
+                    if (action.key === 'site' && onAddProgress) onAddProgress(task);
+                    if (action.key === 'inventory' && onViewInventory) onViewInventory(task.project_id);
+                    if (action.key === 'task' && onAddTask) onAddTask();
+                  }}
+                  className="flex-row items-center rounded-[14px] bg-white px-4 py-3"
+                  style={{
+                    shadowColor: '#7370FF',
+                    shadowOpacity: 0.15,
+                    shadowRadius: 8,
+                    elevation: 4,
+                  }}>
+                  <Text className="mr-3 text-[14px] font-medium text-[#1E1E1E]">
+                    {action.label}
+                  </Text>
+                  <View className="h-7 w-7 items-center justify-center rounded-full bg-[#EAE8FF]">
+                    <Ionicons name={action.icon as any} size={15} color="#7370FF" />
+                  </View>
+                </TouchableOpacity>
+              </Animated.View>
+            ))}
+          </View>
+        )}
+
+        {/* Floating Action Button (+) */}
+        <TouchableOpacity 
+          activeOpacity={0.8}
+          className="z-40"
+          style={{
+            position: 'absolute',
+            right: 20,
+            bottom: 110, // Just above the bottom nav mimic
+            backgroundColor: PRIMARY,
+            width: 56,
+            height: 56,
+            borderRadius: 28,
+            justifyContent: 'center',
+            alignItems: 'center',
+            elevation: 10,
+            shadowColor: PRIMARY,
+            shadowOffset: { width: 0, height: 9 },
+            shadowOpacity: 0.4,
+            shadowRadius: 8,
+          }}
+          onPress={toggleFab}>
+          <Animated.View style={{
+            transform: [{
+              rotate: fabAnim.interpolate({
+                inputRange: [0, 1],
+                outputRange: ['0deg', '45deg']
+              })
+            }]
+          }}>
+            <Ionicons name="add" size={28} color="white" />
+          </Animated.View>
+        </TouchableOpacity>
+
       </View>
 
       {/* Image Viewer Modal */}
@@ -379,6 +529,62 @@ export default function TaskDetailScreen({
               <Ionicons name="trash-outline" size={22} color="#FF6B6B" />
               <Text className="ml-4 text-[16px] text-[#FF6B6B] font-semibold">Delete Entry</Text>
             </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
+      {/* Shift Selection Modal */}
+      <Modal visible={showShiftModal} transparent={true} animationType="slide">
+        <TouchableOpacity 
+          activeOpacity={1} 
+          onPress={() => setShowShiftModal(false)}
+          className="flex-1 justify-end bg-black/40">
+          <View className="bg-white rounded-t-[30px] p-6 pb-12">
+            <View className="h-1 w-10 bg-gray-300 self-center rounded-full mb-6" />
+            <Text className="text-center text-[18px] font-bold text-[#1E1E1E] mb-6">Select Shift</Text>
+            
+            {[
+              { label: 'Morning', icon: 'partly-sunny-outline' as const, desc: '6:00 AM - 12:00 PM' },
+              { label: 'Noon', icon: 'sunny-outline' as const, desc: '12:00 PM - 2:00 PM' },
+              { label: 'Afternoon', icon: 'partly-sunny-outline' as const, desc: '2:00 PM - 6:00 PM' },
+            ].map((item) => (
+              <TouchableOpacity
+                key={item.label}
+                onPress={async () => {
+                  setCurrentShift(item.label);
+                  setShowShiftModal(false);
+                  // Update in database
+                  try {
+                    await fetch(`${API_URL}/tasks/${task.id}`, {
+                      method: 'PATCH',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ shift: item.label }),
+                    });
+                  } catch (err) {
+                    console.error('Failed to update shift:', err);
+                  }
+                }}
+                className={`mb-3 flex-row items-center rounded-xl border p-4 ${
+                  currentShift === item.label 
+                    ? 'border-[#7370FF] bg-[#F5F5FF]' 
+                    : 'border-[#F0F0F0] bg-[#FAFAFA]'
+                }`}>
+                <View className={`mr-3 h-10 w-10 items-center justify-center rounded-full ${
+                  currentShift === item.label ? 'bg-[#7370FF]' : 'bg-[#EAE8FF]'
+                }`}>
+                  <Ionicons name={item.icon} size={20} color={currentShift === item.label ? 'white' : PRIMARY} />
+                </View>
+                <View className="flex-1">
+                  <Text className={`text-[15px] font-semibold ${
+                    currentShift === item.label ? 'text-[#7370FF]' : 'text-[#1E1E1E]'
+                  }`}>{item.label}</Text>
+                  <Text className="text-[11px] text-[#A3A3A3]">{item.desc}</Text>
+                </View>
+                {currentShift === item.label && (
+                  <Ionicons name="checkmark-circle" size={22} color={PRIMARY} />
+                )}
+              </TouchableOpacity>
+            ))}
           </View>
         </TouchableOpacity>
       </Modal>

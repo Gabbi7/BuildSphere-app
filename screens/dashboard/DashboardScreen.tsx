@@ -57,6 +57,7 @@ export default function DashboardScreen({
   const fabAnim = useRef(new Animated.Value(0)).current;
   const [selectedTask, setSelectedTask] = useState<any>(null);
   const [projectActionModal, setProjectActionModal] = useState<Project | null>(null);
+  const [prefilledTask, setPrefilledTask] = useState<any>(null);
 
   // RBAC: Filtered FAB Actions 
   const perms = useMemo(() => getPermissions(user.role), [user.role]);
@@ -144,10 +145,6 @@ export default function DashboardScreen({
 
         const mappedData = filteredData.map((p: any) => {
           if (p.image_url === 'building.jpg') p.image = require('../../assets/building.jpg');
-          if (p.image_url === 'Gemini_Generated_Image_mcjrmgmcjrmgmcjr.png')
-            p.image = require('../../assets/Gemini_Generated_Image_mcjrmgmcjrmgmcjr.png');
-          if (p.image_url === 'pexels-annechois-6148374.jpg')
-            p.image = require('../../assets/pexels-annechois-6148374.jpg');
           return p;
         });
         setProjects(mappedData);
@@ -397,7 +394,11 @@ export default function DashboardScreen({
         visible={showSiteProgress}
         user={user}
         projects={projects}
-        onClose={() => setShowSiteProgress(false)}
+        initialTask={prefilledTask}
+        onClose={() => {
+          setShowSiteProgress(false);
+          setPrefilledTask(null);
+        }}
       />
       <AddTaskScreen
         visible={showAddTask}
@@ -414,6 +415,15 @@ export default function DashboardScreen({
         onNavigate={(tab) => {
           setSelectedTask(null);
           setActiveTab(tab);
+        }}
+        onAddProgress={(task) => {
+          setSelectedTask(null); // Close the detail screen first to avoid Modal stacking issues
+          setPrefilledTask(task);
+          setShowSiteProgress(true);
+        }}
+        onAddTask={() => {
+          setSelectedTask(null);
+          setShowAddTask(true);
         }}
         onViewInventory={(projectId) => {
 

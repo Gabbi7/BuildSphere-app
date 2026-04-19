@@ -27,6 +27,7 @@ interface Props {
   user: UserInfo;
   onClose: () => void;
   projects: { id: number; name: string }[];
+  initialTask?: any;
 }
 
 const PRIMARY = '#7370FF';
@@ -36,11 +37,11 @@ const PRIMARY = '#7370FF';
 // Step 3: Form details
 // Step 4: Success
 
-export default function UploadSiteProgressScreen({ visible, user, onClose, projects }: Props) {
+export default function UploadSiteProgressScreen({ visible, user, onClose, projects, initialTask }: Props) {
   const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
   const [photoUri, setPhotoUri] = useState<string | null>(null);
-  const [projectId, setProjectId] = useState<number | null>(null);
-  const [taskId, setTaskId] = useState<number | null>(null);
+  const [projectId, setProjectId] = useState<number | null>(initialTask?.project_id || null);
+  const [taskId, setTaskId] = useState<number | null>(initialTask?.id || null);
   const [userTasks, setUserTasks] = useState<any[]>([]);
   const [quantityInstalled, setQuantityInstalled] = useState('');
   const [notes, setNotes] = useState('');
@@ -75,14 +76,15 @@ export default function UploadSiteProgressScreen({ visible, user, onClose, proje
       .then((res) => res.json())
       .then((data) => {
         setUserTasks(data);
-        if (data.length > 0) {
+        // Only auto-select first task if no initialTask was provided
+        if (!initialTask && data.length > 0) {
           setTaskId(data[0].id);
           setProjectId(data[0].project_id);
         }
       })
       .catch((err) => console.error('Error fetching user tasks:', err))
       .finally(() => setLoadingTasks(false));
-  }, [user.id]);
+  }, [user.id, initialTask]);
 
   const handleClose = () => {
     reset();
