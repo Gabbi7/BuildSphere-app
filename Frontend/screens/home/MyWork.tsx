@@ -50,9 +50,9 @@ export default function MyWork({ userId, onTaskSelect }: MyWorkProps) {
 
   const TABS: { label: Tab; color: string }[] = [
     { label: 'To Do', color: '#FF6B6B' },
-    { label: 'In Progress', color: '#FFA94D' },
-    { label: 'To Review', color: '#7370FF' },
-    { label: 'Completed', color: '#51CF66' },
+    { label: 'In Progress', color: '#7370FF' },
+    { label: 'To Review', color: '#FF9800' },
+    { label: 'Completed', color: '#4CAF50' },
   ];
 
   useEffect(() => {
@@ -172,16 +172,19 @@ export default function MyWork({ userId, onTaskSelect }: MyWorkProps) {
   const getStatusColor = (status: string) => {
     switch (status?.toLowerCase()) {
       case 'pending':
+      case 'todo':
         return '#FF6B6B'; // To Do
       case 'in-progress':
-        return '#FFA94D'; // In Progress
+      case 'in_progress':
+        return '#7370FF'; // In Progress
       case 'in-review':
       case 'to-review':
-        return '#7370FF'; // To Review
+      case 'in_review':
+        return '#FF9800'; // To Review
       case 'completed':
-        return '#51CF66'; // Completed
+        return '#4CAF50'; // Completed
       default:
-        return '#FF6B6B';
+        return '#757575';
     }
   };
 

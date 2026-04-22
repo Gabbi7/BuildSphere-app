@@ -61,6 +61,8 @@ export default function TaskDetailScreen({
   const fabAnim = useRef(new Animated.Value(0)).current;
   const [currentShift, setCurrentShift] = useState(task?.shift || 'Morning');
   const [showShiftModal, setShowShiftModal] = useState(false);
+  const [currentStatus, setCurrentStatus] = useState(task?.status || 'pending');
+  const [showStatusModal, setShowStatusModal] = useState(false);
 
 
   useEffect(() => {
@@ -69,7 +71,10 @@ export default function TaskDetailScreen({
     } else {
       setCurrentShift('Morning');
     }
-  }, [task?.id, task?.shift]);
+    if (task?.status) {
+      setCurrentStatus(task.status);
+    }
+  }, [task?.id, task?.shift, task?.status]);
 
   useEffect(() => {
     if (visible && task?.id) {
@@ -90,14 +95,22 @@ export default function TaskDetailScreen({
 
   const getStatusStyle = (status: string) => {
     switch (status?.toLowerCase()) {
+      case 'pending':
+      case 'todo':
+        return { bg: '#FFEBEB', text: '#FF6B6B', label: 'To Do' };
       case 'in-progress':
+      case 'in progress':
+      case 'in_progress':
         return { bg: '#EAE8FF', text: '#7370FF', label: 'In Progress' };
+      case 'to-review':
+      case 'in review':
+      case 'in-review':
+      case 'in_review':
+        return { bg: '#FFF4E5', text: '#FF9800', label: 'In Review' };
       case 'completed':
         return { bg: '#E8F5E9', text: '#4CAF50', label: 'Completed' };
-      case 'to-review':
-        return { bg: '#FFF4E5', text: '#FF9800', label: 'To Review' };
       default:
-        return { bg: '#EAE8FF', text: '#7370FF', label: 'In Progress' };
+        return { bg: '#F5F5F5', text: '#757575', label: status || 'To Do' };
     }
   };
 
@@ -138,13 +151,17 @@ export default function TaskDetailScreen({
             style={{ shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 10, elevation: 2 }}>
             <View className="mb-4 flex-row items-center justify-between">
               <Text className="mr-4 flex-1 text-[20px] font-bold text-[#1E1E1E]">{task.title}</Text>
-              <View className="rounded-full px-5 py-2" style={{ backgroundColor: statusStyle.bg }}>
+              <TouchableOpacity
+                onPress={() => setShowStatusModal(true)}
+                className="rounded-full px-5 py-2 flex-row items-center"
+                style={{ backgroundColor: getStatusStyle(currentStatus).bg }}>
                 <Text
                   className="text-[11px] font-bold uppercase tracking-wider"
-                  style={{ color: statusStyle.text }}>
-                  {statusStyle.label}
+                  style={{ color: getStatusStyle(currentStatus).text }}>
+                  {getStatusStyle(currentStatus).label}
                 </Text>
-              </View>
+                <Ionicons name="chevron-down" size={12} color={getStatusStyle(currentStatus).text} style={{ marginLeft: 6 }} />
+              </TouchableOpacity>
             </View>
             <Text className="text-[14px] leading-6 text-[#A3A3A3]">
               {task.description ||
@@ -226,19 +243,21 @@ export default function TaskDetailScreen({
 
             {loadingHistory ? (
               <ActivityIndicator color={PRIMARY} />
-            ) : history.length === 0 ? (
+            ) : history.filter(item => !currentShift || item.shift === currentShift).length === 0 ? (
               <View className="items-center justify-center py-6 rounded-2xl bg-gray-50 border border-dashed border-gray-200">
-                <Text className="text-[12px] text-gray-400">No progress history recorded yet.</Text>
+                <Text className="text-[12px] text-gray-400">No {currentShift} progress recorded yet.</Text>
               </View>
             ) : (
-              history.map((item, idx) => (
-                <View
-                  key={item.id}
-                  className="mb-4 rounded-2xl bg-[#FAFBFF] border border-[#F0F2FF] p-4"
-                  style={{ position: 'relative' }}>
-
-                  {/* Timeline Line */}
-                  {idx < history.length - 1 && (
+              history
+                .filter(item => !currentShift || item.shift === currentShift)
+                .map((item, idx, filteredArr) => (
+                  <View
+                    key={item.id}
+                    className="mb-4 rounded-2xl bg-[#FAFBFF] border border-[#F0F2FF] p-4"
+                    style={{ position: 'relative' }}>
+                    
+                    {/* Timeline Line */}
+                    {idx < filteredArr.length - 1 && (
                     <View
                       style={{
                         position: 'absolute',
@@ -282,8 +301,10 @@ export default function TaskDetailScreen({
                         </View>
                         <View className="flex-row items-center">
                           <Ionicons name="time-outline" size={14} color="#1E1E1E" />
-                          <Text className="ml-1 text-[10px] text-[#A3A3A3]">
-                            {item.shift || 'Log'}
+                          <Text className="ml-1 text-[10px] font-medium text-[#A3A3A3]">
+                            {item.created_at 
+                              ? `${new Date(item.created_at).toLocaleDateString([], { month: 'numeric', day: 'numeric' })} @ ${new Date(item.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` 
+                              : 'Log'}
                           </Text>
                           <TouchableOpacity
                             onPress={() => {
@@ -291,7 +312,7 @@ export default function TaskDetailScreen({
                               setShowActionMenu(true);
                             }}
                             className="ml-2">
-                            <Ionicons name="ellipsis-horizontal" size={14} color="#1E1E1E" />
+                            <Ionicons name="ellipsis-vertical" size={14} color="#1E1E1E" />
                           </TouchableOpacity>
                         </View>
 
@@ -578,6 +599,66 @@ export default function TaskDetailScreen({
                   <Text className="text-[11px] text-[#A3A3A3]">{item.desc}</Text>
                 </View>
                 {currentShift === item.label && (
+                  <Ionicons name="checkmark-circle" size={22} color={PRIMARY} />
+                )}
+              </TouchableOpacity>
+            ))}
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
+      {/* Status Selection Modal */}
+      <Modal visible={showStatusModal} transparent={true} animationType="slide">
+        <TouchableOpacity
+          activeOpacity={1}
+          onPress={() => setShowStatusModal(false)}
+          className="flex-1 justify-end bg-black/40">
+          <View className="bg-white rounded-t-[30px] p-6 pb-12">
+            <View className="h-1 w-10 bg-gray-300 self-center rounded-full mb-6" />
+            <Text className="text-center text-[18px] font-bold text-[#1E1E1E] mb-6">Update Status</Text>
+
+            {[
+              { label: 'To Do', value: 'todo', icon: 'list-outline' as const, color: '#FF6B6B', bg: '#FFEBEB' },
+              { label: 'In Progress', value: 'in_progress', icon: 'play-outline' as const, color: '#7370FF', bg: '#EAE8FF' },
+              { label: 'In Review', value: 'in_review', icon: 'eye-outline' as const, color: '#FF9800', bg: '#FFF4E5' },
+              { label: 'Completed', value: 'completed', icon: 'checkmark-done-outline' as const, color: '#4CAF50', bg: '#E8F5E9' },
+            ].map((item) => (
+              <TouchableOpacity
+                key={item.value}
+                onPress={async () => {
+                  const oldStatus = currentStatus;
+                  setCurrentStatus(item.value);
+                  setShowStatusModal(false);
+                  
+                  try {
+                    const res = await fetch(`${API_URL}/tasks/${task.id}`, {
+                      method: 'PATCH',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ status: item.value }),
+                    });
+                    
+                    if (!res.ok) {
+                      const errorData = await res.json();
+                      throw new Error(errorData.error || 'Failed to update status');
+                    }
+                  } catch (err: any) {
+                    console.error('Failed to update status:', err);
+                    setCurrentStatus(oldStatus);
+                    Alert.alert('Update Failed', err.message || 'Could not update status. Please try again.');
+                  }
+                }}
+                className={`mb-3 flex-row items-center rounded-xl border p-4 ${currentStatus === item.value
+                    ? 'border-[#7370FF] bg-[#F5F5FF]'
+                    : 'border-[#F0F0F0] bg-[#FAFAFA]'
+                  }`}>
+                <View className={`mr-3 h-10 w-10 items-center justify-center rounded-full`} style={{ backgroundColor: item.bg }}>
+                  <Ionicons name={item.icon} size={20} color={item.color} />
+                </View>
+                <View className="flex-1">
+                  <Text className={`text-[15px] font-semibold ${currentStatus === item.value ? 'text-[#7370FF]' : 'text-[#1E1E1E]'
+                    }`}>{item.label}</Text>
+                </View>
+                {currentStatus === item.value && (
                   <Ionicons name="checkmark-circle" size={22} color={PRIMARY} />
                 )}
               </TouchableOpacity>

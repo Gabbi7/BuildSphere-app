@@ -134,5 +134,40 @@ router.post('/', async (req, res) => {
 });
 
 
+// PATCH /tasks/:id
+router.patch('/:id', async (req, res) => {
+  const { id } = req.params;
+  const updates = req.body;
+  
+  console.log(`UPDATING TASK ${id}:`, updates);
+
+  if (Object.keys(updates).length === 0) {
+    return res.status(400).json({ error: 'No fields provided for update.' });
+  }
+
+  const keys = Object.keys(updates);
+  const values = Object.values(updates);
+  
+  const setClause = keys.map((key, i) => `${key} = $${i + 1}`).join(', ');
+  
+  try {
+    const result = await pool.query(
+      `UPDATE "public"."tasks" SET ${setClause}, updated_at = NOW() WHERE id = $${keys.length + 1} RETURNING *`,
+      [...values, id]
+    );
+    
+    if (result.rows.length === 0) {
+      console.log(`TASK ${id} NOT FOUND`);
+      return res.status(404).json({ error: 'Task not found.' });
+    }
+    
+    console.log(`TASK ${id} UPDATED SUCCESSFULLY`);
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error('DATABASE UPDATE ERROR:', err.message);
+    res.status(500).json({ error: 'Failed to update task: ' + err.message });
+  }
+});
+
 module.exports = router;
 

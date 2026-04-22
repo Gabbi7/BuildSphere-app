@@ -7,6 +7,7 @@ import {
   Animated,
   Modal,
   Alert,
+  RefreshControl,
 } from 'react-native';
 
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -21,11 +22,12 @@ import ProjectDetailScreen from './ProjectDetailScreen';
 import AddTaskScreen from './AddTaskScreen';
 import TaskDetailScreen from './TaskDetailScreen';
 import InventoryScreen from './InventoryScreen';
+import EditProjectScreen from './EditProjectScreen';
 import { API_URL } from '../../lib/api';
 import { UserInfo } from '../../App';
 import { getPermissions } from '../../constants/roles';
 
-interface DashboardScreenProps {
+interface HomeScreenProps {
   onLogout: () => void;
   user: UserInfo;
   onUserUpdated: (updated: UserInfo) => void;
@@ -37,13 +39,16 @@ interface Project {
   location: string;
   color: string;
   status: string;
+  daysLeft?: number;
+  progress?: number;
+  image?: any;
 }
 
-export default function DashboardScreen({
+export default function HomeScreen({
   onLogout,
   user: initialUser,
   onUserUpdated,
-}: DashboardScreenProps) {
+}: HomeScreenProps) {
   const [activeTab, setActiveTab] = useState<'home' | 'mywork' | 'notifications' | 'more'>('home');
   const [projects, setProjects] = useState<Project[]>([]);
   const [loadingProjects, setLoadingProjects] = useState(true);
@@ -58,6 +63,7 @@ export default function DashboardScreen({
   const [selectedTask, setSelectedTask] = useState<any>(null);
   const [projectActionModal, setProjectActionModal] = useState<Project | null>(null);
   const [prefilledTask, setPrefilledTask] = useState<any>(null);
+  const [showEditProject, setShowEditProject] = useState(false);
 
   // RBAC: Filtered FAB Actions 
   const perms = useMemo(() => getPermissions(user.role), [user.role]);
@@ -157,7 +163,8 @@ export default function DashboardScreen({
     setShowInventory(true);
   };
 
-  useEffect(() => {
+  const fetchProjects = () => {
+    setLoadingProjects(true);
     fetch(`${API_URL}/projects`)
       .then((res) => res.json())
       .then((data) => {
@@ -169,6 +176,19 @@ export default function DashboardScreen({
 
         const mappedData = filteredData.map((p: any) => {
           if (p.image_url === 'building.jpg') p.image = require('../../assets/building.jpg');
+
+          // Calculate days left
+          if (p.end_date) {
+            const end = new Date(p.end_date);
+            const now = new Date();
+            const diff = end.getTime() - now.getTime();
+            const days = Math.ceil(diff / (1000 * 60 * 60 * 24));
+            p.daysLeft = days > 0 ? days : 0;
+          }
+
+          // Ensure progress is a number
+          p.progress = Number(p.progress) || 0;
+
           return p;
         });
         setProjects(mappedData);
@@ -178,6 +198,10 @@ export default function DashboardScreen({
         console.error('Dashboard Projects Fetch Error:', err);
         setLoadingProjects(false);
       });
+  };
+
+  useEffect(() => {
+    fetchProjects();
   }, []);
 
   const toggleFab = () => {
@@ -198,10 +222,18 @@ export default function DashboardScreen({
               <ProjectDetailScreen
                 projectId={selectedProjectId}
                 userRole={user.role}
-                onBack={() => setSelectedProjectId(null)}
+                onBack={() => {
+                  setSelectedProjectId(null);
+                  fetchProjects();
+                }}
               />
             ) : (
-              <ScrollView contentContainerStyle={{ paddingBottom: 160 }} className="px-5 pt-4">
+              <ScrollView
+                contentContainerStyle={{ paddingBottom: 160 }}
+                className="px-5 pt-4"
+                refreshControl={
+                  <RefreshControl refreshing={loadingProjects} onRefresh={fetchProjects} color="#7370FF" />
+                }>
                 <View className="flex-row items-center justify-between">
                   <Text className="mb-1 text-[22px] font-bold text-[#6C63FF]">Home</Text>
                   <View className="bg-purple-100 px-3 py-1 rounded-full">
@@ -235,6 +267,8 @@ export default function DashboardScreen({
                         location={p.location}
                         color={`bg-[${p.color}]`}
                         image={p.image}
+                        progress={p.progress}
+                        daysLeft={p.daysLeft}
                         onAction={() => handleProjectAction(p)}
                       />
                     </TouchableOpacity>
@@ -489,7 +523,10 @@ export default function DashboardScreen({
             </Text>
 
             <TouchableOpacity
-              onPress={() => setProjectActionModal(null)}
+              onPress={() => {
+                setProjectActionModal(null);
+                setShowEditProject(true);
+              }}
               className="flex-row items-center py-4 border-b border-gray-50">
               <Ionicons name="create-outline" size={22} color="#7370FF" />
               <Text className="ml-4 text-[16px] text-[#2D2D2D]">Edit Project</Text>
@@ -504,6 +541,14 @@ export default function DashboardScreen({
           </View>
         </TouchableOpacity>
       </Modal>
+
+      {/* Edit Project Screen */}
+      <EditProjectScreen
+        visible={showEditProject}
+        project={projectActionModal}
+        onClose={() => setShowEditProject(false)}
+        onProjectUpdated={() => fetchProjects()}
+      />
     </View>
   );
 }

@@ -1,6 +1,6 @@
 import './global.css';
 import { useState, useEffect } from 'react';
-import DashboardScreen from './screens/dashboard/DashboardScreen';
+import HomeScreen from './screens/home/HomeScreen';
 import LoginScreen from './screens/auth/LoginScreen';
 import ForgotPasswordScreen from './screens/auth/ForgotPasswordScreen';
 import { StatusBar } from 'expo-status-bar';
@@ -71,7 +71,7 @@ export default function App() {
     return (
       <SafeAreaProvider>
         <StatusBar style="dark" />
-        <DashboardScreen user={user} onLogout={handleLogout} onUserUpdated={handleUserUpdated} />
+        <HomeScreen user={user} onLogout={handleLogout} onUserUpdated={handleUserUpdated} />
       </SafeAreaProvider>
     );
   }
