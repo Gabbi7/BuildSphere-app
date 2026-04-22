@@ -69,120 +69,60 @@ export const countGlassPanels = async (base64Image: string, mimeType: string) =>
   }
 };
 
-export const hybridGlassAudit = async (base64Image: string, mimeType: string) => {
-  console.log('DEBUG: Hybrid AI Audit Commencing (Roboflow + Gemini)');
+export const hybridGlassAudit = async (base64Image: string, mimeType: string, photoUri?: string) => {
+  console.log('DEBUG: Hybrid AI Audit Commencing (Local YOLO + Gemini)');
   
-  // FALLBACK HARDCODED KEY (Verified to work in test script)
-  const ROBOFLOW_KEY = process.env.EXPO_PUBLIC_ROBOFLOW_API_KEY || "9Q996Y4PkYBZPNuYJ3AP";
-  const WORKSPACE = "gavin-ralph-rama";
-  const WORKFLOW = "general-segmentation-api";
-
-  if (!ROBOFLOW_KEY) {
-    throw new Error('CONFIG_ERROR: Roboflow API Key missing in .env');
-  }
+  // Use your local IP address (port 8000 for Python CV Service)
+  const API_URL = "http://192.168.0.69:8000/detect-panels";
 
   try {
-    // 1. STEP ONE: Get precise count from Roboflow
-    console.log('DEBUG: Calling Roboflow Workflow...');
-    const roboflowResponse = await fetch(`https://detect.roboflow.com/infer/workflows/${WORKSPACE}/${WORKFLOW}`, {
+    let count = 0;
+    let summary = '';
+    let annotatedImage = null;
+    let rawDetections = null;
+
+    if (!photoUri) {
+        throw new Error('Photo URI is required for local CV Service.');
+    }
+
+    console.log('DEBUG: Calling Local CV Service...');
+    
+    const formData = new FormData();
+    const filename = photoUri.split('/').pop() || 'photo.jpg';
+    
+    formData.append('file', {
+      uri: photoUri,
+      name: filename,
+      type: mimeType,
+    } as any);
+
+    const cvResponse = await fetch(API_URL, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        api_key: ROBOFLOW_KEY,
-        inputs: {
-          image: { type: "base64", value: base64Image },
-          classes: "0, 1, 2, Glass, glassss"
-        }
-      })
+      headers: {
+        'Accept': 'application/json',
+      },
+      body: formData,
     });
 
-    if (!roboflowResponse.ok) {
-        const errText = await roboflowResponse.text();
-        console.error('ROBOFLOW_API_ERROR:', roboflowResponse.status, errText);
-        throw new Error(`Roboflow Error (${roboflowResponse.status}): ${errText.substring(0, 100)}`);
+    if (!cvResponse.ok) {
+        const errText = await cvResponse.text();
+        console.error('CV_API_ERROR:', cvResponse.status, errText);
+        throw new Error(`CV Service Error (${cvResponse.status}): ${errText.substring(0, 100)}`);
     }
 
-    const roboflowData = await roboflowResponse.json();
-    let count = 0;
+    const cvData = await cvResponse.json();
+    count = cvData.total_valid_panels || 0;
+    summary = cvData.summary_text || `Site Audit Complete. CV API detected ${count} valid panels.`;
+    annotatedImage = cvData.annotated_image_base64;
+    rawDetections = cvData.detections;
     
-    if (roboflowData.outputs && roboflowData.outputs.length > 0) {
-        const out = roboflowData.outputs[0];
-        let preds = out.predictions;
-        if (preds && preds.predictions && Array.isArray(preds.predictions)) {
-            preds = preds.predictions;
-        }
-        if (Array.isArray(preds)) {
-            // FILTER: Only count high-confidence, significant glass panels
-            const filtered = preds.filter(p => {
-                const label = (p.class || '').toLowerCase();
-                const isGlassLabel = label.includes('glass') || p.class_id === 0 || label === ''; 
-                
-                const conf = p.confidence || 0;
-                const w = p.width || 0;
-                const h = p.height || 0;
-
-                // Thresholds to ignore reflections/noise
-                const isConfident = conf > 0.6;
-                const isSignificant = w > 30 && h > 30; // Ignore tiny segments
-
-                return isGlassLabel && isConfident && isSignificant;
-            });
-            
-            count = filtered.length;
-            console.log(`DEBUG: Raw Detections: ${preds.length}, Filtered Panels: ${count}`);
-        }
-    }
-
-    console.log(`DEBUG: Roboflow detected ${count} panels.`);
-
-    // 2. STEP TWO: Summarize with Gemini Flash (Smart Fallback)
-    console.log('DEBUG: Generating Gemini Summary...');
-    let summary = '';
-    
-    // Try multiple model IDs to avoid 404 issues
-    const modelOptions = ['gemini-1.5-flash', 'gemini-1.5-flash-8b', 'gemini-pro'];
-    let geminiSuccess = false;
-
-    for (const modelName of modelOptions) {
-        if (geminiSuccess) break;
-        try {
-            console.log(`DEBUG: Trying Gemini Model: ${modelName}`);
-            const model = genAI.getGenerativeModel({ model: modelName });
-            
-            const prompt = `
-                You are a Glazing Auditor. 
-                A vision system detected ${count} glass surfaces, but it might be over-counting reflections.
-                
-                TASK: Look at the photo yourself. If ${count} panels seems like an over-count (e.g. counting reflections), provide the CORRECT count based on your visual reasoning.
-                
-                Write a 2-sentence professional summary for the site supervisor. State the final, accurate count clearly.
-            `;
-
-            const geminiResult = await model.generateContent([
-                prompt,
-                { inlineData: { data: base64Image, mimeType: mimeType } },
-            ]);
-
-            summary = await geminiResult.response.text();
-            geminiSuccess = true;
-            console.log(`DEBUG: Result obtained with ${modelName}`);
-        } catch (geminiError: any) {
-            console.warn(`DEBUG: ${modelName} failed:`, geminiError.message);
-            // If it's not a 404, we don't want to keep trying other models (e.g. 429)
-            if (!geminiError.message?.includes('404')) {
-                break;
-            }
-        }
-    }
-
-    if (!geminiSuccess) {
-        summary = `Site Audit Complete. Roboflow detected ${count} glass panels with high precision. (AI Summary temporarily unavailable).`;
-    }
+    console.log(`DEBUG: CV Service returned ${count} panels and summary.`);
 
     return {
       count,
       summary,
-      rawDetections: roboflowData
+      annotatedImage,
+      rawDetections
     };
 
   } catch (error: any) {

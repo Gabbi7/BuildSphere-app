@@ -16,34 +16,42 @@ const storage = multer.memoryStorage();
 const upload = multer({ storage, limits: { fileSize: 10 * 1024 * 1024 } });
 
 
-// POST /site-progress  — upload photo + form data
-router.post('/', upload.single('photo'), async (req, res) => {
-  // photoUrl can come from body (Supabase) or req.file (local)
+// POST /site-progress  — upload multiple photos + form data
+router.post('/', upload.array('photos', 5), async (req, res) => {
+  // photoUrls can come from body or req.files
   const { projectId, taskId, quantityInstalled, notes, userId, glassCount, shift, workDate } = req.body;
-  let photoUrl = req.body.photoUrl; // Direct URL from Supabase (if sent from mobile via other means)
+  let photoUrls = []; 
 
   try {
-    if (!photoUrl && req.file) {
-      const filename = `progress_${Date.now()}${path.extname(req.file.originalname)}`;
-      
-      // 1. Upload to Supabase Storage
-      const { data: uploadData, error: uploadError } = await supabase.storage
-        .from('site-progress')
-        .upload(filename, req.file.buffer, {
-          contentType: req.file.mimetype,
-          cacheControl: '3600',
-          upsert: false
-        });
+    if (req.files && req.files.length > 0) {
+      for (const file of req.files) {
+        const filename = `progress_${Date.now()}_${Math.floor(Math.random() * 1000)}${path.extname(file.originalname)}`;
+        
+        // 1. Upload to Supabase Storage
+        const { data: uploadData, error: uploadError } = await supabase.storage
+          .from('site-progress')
+          .upload(filename, file.buffer, {
+            contentType: file.mimetype,
+            cacheControl: '3600',
+            upsert: false
+          });
 
-      if (uploadError) throw uploadError;
+        if (uploadError) {
+          console.error('Supabase Upload Error:', uploadError);
+          continue; // Skip failed uploads
+        }
 
-      // 2. Get Public URL
-      const { data: publicUrlData } = supabase.storage
-        .from('site-progress')
-        .getPublicUrl(filename);
-      
-      photoUrl = publicUrlData.publicUrl;
+        // 2. Get Public URL
+        const { data: publicUrlData } = supabase.storage
+          .from('site-progress')
+          .getPublicUrl(filename);
+        
+        photoUrls.push(publicUrlData.publicUrl);
+      }
     }
+
+    // Convert array to string for database (or store as first one if column is strict)
+    const finalPhotoPath = photoUrls.length > 0 ? JSON.stringify(photoUrls) : (req.body.photoUrl || null);
 
     // 1. Fetch milestone_id from the task
     const taskRes = await pool.query('SELECT milestone_id FROM tasks WHERE id = $1', [taskId]);
@@ -58,7 +66,7 @@ router.post('/', upload.single('photo'), async (req, res) => {
         milestoneId,
         parseInt(userId),
         parseInt(quantityInstalled) || parseInt(glassCount) || 0,
-        photoUrl,
+        finalPhotoPath,
         notes,
         shift || 'Morning',
         workDate || new Date(),
@@ -81,8 +89,11 @@ router.post('/', upload.single('photo'), async (req, res) => {
 
     res.json(progress);
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Failed to save task progress.' });
+    console.error('SERVER_SAVE_ERROR:', err);
+    res.status(500).json({ 
+      error: 'Failed to save task progress.',
+      detail: err.message 
+    });
   }
 });
 

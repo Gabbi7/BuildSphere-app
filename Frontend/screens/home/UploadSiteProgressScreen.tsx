@@ -9,6 +9,9 @@ import {
   ActivityIndicator,
   Image,
   Modal,
+  Dimensions,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { Picker } from '@react-native-picker/picker';
 import { Ionicons } from '@expo/vector-icons';
@@ -30,6 +33,11 @@ interface Props {
   initialTask?: any;
 }
 
+interface SelectedPhoto {
+  uri: string;
+  base64: string | null;
+}
+
 const PRIMARY = '#7370FF';
 
 // Step 1: Pick photo + basic info
@@ -37,9 +45,11 @@ const PRIMARY = '#7370FF';
 // Step 3: Form details
 // Step 4: Success
 
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
+
 export default function UploadSiteProgressScreen({ visible, user, onClose, projects, initialTask }: Props) {
   const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
-  const [photoUri, setPhotoUri] = useState<string | null>(null);
+  const [selectedPhotos, setSelectedPhotos] = useState<SelectedPhoto[]>([]);
   const [projectId, setProjectId] = useState<number | null>(initialTask?.project_id || null);
   const [taskId, setTaskId] = useState<number | null>(initialTask?.id || null);
   const [userTasks, setUserTasks] = useState<any[]>([]);
@@ -58,7 +68,7 @@ export default function UploadSiteProgressScreen({ visible, user, onClose, proje
 
   const reset = () => {
     setStep(1);
-    setPhotoUri(null);
+    setSelectedPhotos([]);
     setProjectId(projects[0]?.id || null);
     setTaskId(null);
     setShift('Morning');
@@ -90,19 +100,32 @@ export default function UploadSiteProgressScreen({ visible, user, onClose, proje
     reset();
     onClose();
   };
-
-  const pickFromLibrary = async () => {
+  const pickFromLibrary = async (multiple = true) => {
+    const remainingLimit = 5 - selectedPhotos.length;
+    if (remainingLimit <= 0) {
+      Alert.alert('Limit Reached', 'You can only upload up to 5 photos.');
+      return;
+    }
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') {
       Alert.alert('Permission required', 'Please allow photo library access.');
       return;
     }
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
       allowsEditing: false,
       quality: 0.8,
+      base64: true,
+      allowsMultipleSelection: multiple,
+      selectionLimit: remainingLimit,
     });
-    if (!result.canceled && result.assets[0]) setPhotoUri(result.assets[0].uri);
+    if (!result.canceled && result.assets) {
+      const newPhotos = result.assets.map(asset => ({
+        uri: asset.uri,
+        base64: asset.base64 || null
+      }));
+      setSelectedPhotos(prev => [...prev, ...newPhotos]);
+    }
   };
 
   const takePhoto = async () => {
@@ -114,44 +137,62 @@ export default function UploadSiteProgressScreen({ visible, user, onClose, proje
     const result = await ImagePicker.launchCameraAsync({
       allowsEditing: false,
       quality: 0.8,
+      base64: true,
     });
-    if (!result.canceled && result.assets[0]) setPhotoUri(result.assets[0].uri);
+    if (!result.canceled && result.assets[0]) {
+      setSelectedPhotos(prev => [...prev, {
+        uri: result.assets[0].uri,
+        base64: result.assets[0].base64 || null
+      }]);
+    }
+  };
+
+  const removePhoto = (index: number) => {
+    setSelectedPhotos(prev => prev.filter((_, i) => i !== index));
   };
 
   const showPhotoOptions = () => {
-    Alert.alert('Add Photo', 'Choose an option', [
+    Alert.alert('Add Photo', 'How would you like to add photos?', [
       { text: 'Take Photo', onPress: takePhoto },
-      { text: 'Choose from Library', onPress: pickFromLibrary },
+      { text: 'Select Single Photo', onPress: () => pickFromLibrary(false) },
+      { text: 'Select Multiple (Max 5)', onPress: () => pickFromLibrary(true) },
       { text: 'Cancel', style: 'cancel' },
     ]);
   };
 
   const handleCountGlass = async () => {
     console.log('DEBUG: handleCountGlass triggered (Hybrid Mode)');
-    if (!photoUri) {
-      console.log('DEBUG: photoUri is null, returning');
+    if (selectedPhotos.length === 0) {
+      console.log('DEBUG: no photos, returning');
       return;
     }
 
     setAnalyzing(true);
     try {
-      // Convert image to base64
-      const base64 = await FileSystem.readAsStringAsync(photoUri, {
-        encoding: 'base64',
-      });
-
-      const filename = photoUri.split('/').pop() || 'photo.jpg';
+      // For now, let's analyze the FIRST photo in the array
+      // (Or we could loop through all of them later)
+      const currentPhoto = selectedPhotos[0];
+      const filename = currentPhoto.uri.split('/').pop() || 'photo.jpg';
       const ext = (filename.split('.').pop() || 'jpeg').toLowerCase();
       const mimeType = ext === 'jpg' ? 'image/jpeg' : `image/${ext}`;
 
       console.log(`DEBUG: Hybrid Analysis starting. Mime: ${mimeType}`);
 
-      // NEW HYBRID FLOW: Roboflow (Count) + Gemini (Summary)
-      const { count, summary } = await hybridGlassAudit(base64, mimeType);
+      // NEW HYBRID FLOW: Local CV Service
+      const { count, summary, annotatedImage } = await hybridGlassAudit(currentPhoto.base64!, mimeType, currentPhoto.uri);
       
       console.log(`DEBUG: Hybrid Success! Count: ${count}`);
       
       setGlassCount(count);
+
+      if (annotatedImage) {
+        // Update the first photo with the annotated version from the AI
+        setSelectedPhotos(prev => {
+          const updated = [...prev];
+          updated[0] = { ...updated[0], uri: annotatedImage };
+          return updated;
+        });
+      }
 
       // Append result to notes
       const newNotes = notes
@@ -197,16 +238,18 @@ export default function UploadSiteProgressScreen({ visible, user, onClose, proje
       formData.append('userId', user.id.toString());
 
 
-      if (photoUri) {
-        const filename = photoUri.split('/').pop() || 'photo.jpg';
-        const match = /\.(\w+)$/.exec(filename);
-        const type = match ? `image/${match[1]}` : `image`;
+      if (selectedPhotos.length > 0) {
+        selectedPhotos.forEach((photo, index) => {
+          const filename = photo.uri.split('/').pop() || `photo_${index}.jpg`;
+          const match = /\.(\w+)$/.exec(filename);
+          const type = match ? `image/${match[1]}` : `image/jpeg`;
 
-        formData.append('photo', {
-          uri: photoUri,
-          name: filename,
-          type,
-        } as any);
+          formData.append('photos', {
+            uri: photo.uri,
+            name: filename,
+            type,
+          } as any);
+        });
       }
 
       const response = await fetch(`${API_URL}/site-progress`, {
@@ -250,7 +293,11 @@ export default function UploadSiteProgressScreen({ visible, user, onClose, proje
       animationType="slide"
       presentationStyle="pageSheet"
       onRequestClose={handleClose}>
-      <View className="flex-1 bg-white">
+      <KeyboardAvoidingView 
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={{ flex: 1 }}
+      >
+        <View className="flex-1 bg-white">
         {/* ── STEP 1: Upload photo + quick info ── */}
         {step === 1 && (
           <>
@@ -265,26 +312,44 @@ export default function UploadSiteProgressScreen({ visible, user, onClose, proje
             </View>
 
             <ScrollView className="flex-1 px-5 pt-5" contentContainerStyle={{ paddingBottom: 40 }}>
-              {/* Photo Picker */}
-              <TouchableOpacity
-                onPress={showPhotoOptions}
-                className="mb-6 items-center justify-center rounded-[16px] border-2 border-dashed border-[#D3D0FF] bg-[#F8F7FF]"
-                style={{ height: 160 }}>
-                {photoUri ? (
-                  <Image
-                    source={{ uri: photoUri }}
-                    style={{ width: '100%', height: 160, borderRadius: 14 }}
-                    resizeMode="cover"
-                  />
-                ) : (
-                  <>
-                    <View className="mb-2 h-14 w-14 items-center justify-center rounded-full bg-[#EAE8FF]">
-                      <Ionicons name="camera" size={26} color={PRIMARY} />
-                    </View>
-                    <Text className="text-[13px] text-[#A3A3A3]">Tap to upload photo</Text>
-                  </>
-                )}
-              </TouchableOpacity>
+              {/* Photo Grid / List */}
+              {selectedPhotos.length > 0 ? (
+                <View className="mb-6">
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} className="flex-row">
+                    {selectedPhotos.map((photo, index) => (
+                      <View key={index} className="mr-3">
+                        <Image
+                          source={{ uri: photo.uri }}
+                          style={{ width: 140, height: 160, borderRadius: 16 }}
+                          resizeMode="cover"
+                        />
+                        <TouchableOpacity
+                          onPress={() => removePhoto(index)}
+                          className="absolute right-1 top-1 h-7 w-7 items-center justify-center rounded-full bg-red-500 shadow-md">
+                          <Ionicons name="close" size={16} color="white" />
+                        </TouchableOpacity>
+                      </View>
+                    ))}
+                    <TouchableOpacity
+                      onPress={showPhotoOptions}
+                      className="items-center justify-center rounded-[16px] border-2 border-dashed border-[#D3D0FF] bg-[#F8F7FF]"
+                      style={{ width: 100, height: 160 }}>
+                      <Ionicons name="add" size={32} color={PRIMARY} />
+                      <Text className="text-[10px] text-[#7370FF]">Add more</Text>
+                    </TouchableOpacity>
+                  </ScrollView>
+                </View>
+              ) : (
+                <TouchableOpacity
+                  onPress={showPhotoOptions}
+                  className="mb-6 items-center justify-center rounded-[16px] border-2 border-dashed border-[#D3D0FF] bg-[#F8F7FF]"
+                  style={{ height: 160 }}>
+                  <View className="mb-2 h-14 w-14 items-center justify-center rounded-full bg-[#EAE8FF]">
+                    <Ionicons name="camera" size={26} color={PRIMARY} />
+                  </View>
+                  <Text className="text-[13px] text-[#A3A3A3]">Tap to upload photo</Text>
+                </TouchableOpacity>
+              )}
               
               <Text className="mb-1 text-[12px] font-semibold text-[#2D2D2D]">Task</Text>
               <TouchableOpacity
@@ -390,7 +455,7 @@ export default function UploadSiteProgressScreen({ visible, user, onClose, proje
                 <Text className="text-[14px] font-semibold text-[#777]">Back</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                onPress={() => (photoUri ? setStep(2) : setStep(3))}
+                onPress={() => (selectedPhotos.length > 0 ? setStep(2) : setStep(3))}
                 className="h-12 flex-1 items-center justify-center rounded-[14px]"
                 style={{ backgroundColor: PRIMARY }}>
                 <Text className="text-[14px] font-bold text-white">Next</Text>
@@ -399,37 +464,64 @@ export default function UploadSiteProgressScreen({ visible, user, onClose, proje
           </>
         )}
 
-        {/* ── STEP 2: Full Photo Preview ── */}
-        {step === 2 && photoUri && (
-          <View className="flex-1">
-            {/* Back button */}
-            <TouchableOpacity
-              onPress={() => setStep(1)}
-              className="absolute left-5 top-12 z-10 h-9 w-9 items-center justify-center rounded-full bg-white"
-              style={{ shadowColor: '#000', shadowOpacity: 0.15, shadowRadius: 6, elevation: 4 }}>
-              <Ionicons name="chevron-back" size={20} color="#1E1E1E" />
-            </TouchableOpacity>
-            <Text className="absolute top-14 z-10 self-center text-[16px] font-bold text-[#1E1E1E]">
-              Upload Site Progress
-            </Text>
+        {/* ── STEP 2: Photo Preview (Framed) ── */}
+        {step === 2 && selectedPhotos.length > 0 && (
+          <View className="flex-1 bg-[#F9F9FB]">
+            {/* Header */}
+            <View className="flex-row items-center border-b border-[#F0F0F0] bg-white px-5 pb-4 pt-10">
+              <TouchableOpacity onPress={() => setStep(1)}>
+                <Ionicons name="chevron-back" size={24} color="#1E1E1E" />
+              </TouchableOpacity>
+              <Text className="ml-3 text-[16px] font-bold text-[#1E1E1E]">
+                Preview Photos ({selectedPhotos.length})
+              </Text>
+            </View>
 
-            <Image source={{ uri: photoUri }} style={{ flex: 1 }} resizeMode="cover" />
+            {/* Framed Image Container */}
+            <View className="flex-1 justify-center px-5 py-8">
+              <View 
+                className="overflow-hidden rounded-[24px] bg-white shadow-xl"
+                style={{ 
+                  height: '100%', 
+                  shadowColor: '#000', 
+                  shadowOpacity: 0.1, 
+                  shadowRadius: 15, 
+                  elevation: 5 
+                }}>
+                <ScrollView 
+                  horizontal 
+                  pagingEnabled 
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={{ alignItems: 'center' }}>
+                  {selectedPhotos.map((photo, index) => (
+                    <View key={index} style={{ width: SCREEN_WIDTH - 40, height: '100%' }}>
+                      <Image 
+                        source={{ uri: photo.uri }} 
+                        style={{ width: '100%', height: '100%' }} 
+                        resizeMode="cover" 
+                      />
+                    </View>
+                  ))}
+                </ScrollView>
 
-            {/* Add more photos label */}
-            <TouchableOpacity
-              onPress={showPhotoOptions}
-              className="absolute bottom-28 flex-row items-center self-center rounded-full bg-white px-4 py-2"
-              style={{ shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 8, elevation: 4 }}>
-              <Ionicons name="add-circle-outline" size={16} color={PRIMARY} />
-              <Text className="ml-1 text-[13px] font-semibold text-[#7370FF]">add more photo</Text>
-            </TouchableOpacity>
+                {/* Page Indicator (if multiple photos) */}
+                {selectedPhotos.length > 1 && (
+                  <View className="absolute bottom-5 left-0 right-0 flex-row justify-center gap-2">
+                    {selectedPhotos.map((_, i) => (
+                      <View key={i} className="h-1.5 w-1.5 rounded-full bg-white/60" />
+                    ))}
+                  </View>
+                )}
+              </View>
+            </View>
 
-            <View className="absolute bottom-10 left-5 right-5">
+            {/* Footer Buttons */}
+            <View className="bg-white border-t border-[#F0F0F0] px-5 pb-10 pt-4">
               <TouchableOpacity
                 onPress={() => setStep(3)}
                 className="h-14 items-center justify-center rounded-[16px]"
                 style={{ backgroundColor: PRIMARY }}>
-                <Text className="text-[16px] font-bold text-white">Next</Text>
+                <Text className="text-[16px] font-bold text-white">Looks Good, Next</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
@@ -455,25 +547,32 @@ export default function UploadSiteProgressScreen({ visible, user, onClose, proje
         {step === 3 && (
           <>
             <View className="flex-row items-center border-b border-[#F0F0F0] px-5 pb-4 pt-10">
-              <TouchableOpacity onPress={() => setStep(photoUri ? 2 : 1)}>
+              <TouchableOpacity onPress={() => setStep(selectedPhotos.length > 0 ? 2 : 1)}>
                 <Ionicons name="chevron-back" size={24} color="#1E1E1E" />
               </TouchableOpacity>
               <Text className="ml-3 text-[16px] font-bold text-[#1E1E1E]">
-                Upload Site Progress
+                Finalize Record
               </Text>
             </View>
 
             {/* Mini photo preview if available */}
-            {photoUri && (
-              <Image
-                source={{ uri: photoUri }}
-                style={{ width: '100%', height: 200 }}
-                resizeMode="cover"
-              />
+            {selectedPhotos.length > 0 && (
+              <View className="bg-[#F8F9FA] border-b border-[#F0F0F0] py-4">
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} className="px-5">
+                  {selectedPhotos.map((photo, index) => (
+                    <Image
+                      key={index}
+                      source={{ uri: photo.uri }}
+                      style={{ width: 110, height: 110, borderRadius: 16, marginRight: 12 }}
+                      resizeMode="cover"
+                    />
+                  ))}
+                </ScrollView>
+              </View>
             )}
 
-            <ScrollView className="flex-1 px-5 pt-5" contentContainerStyle={{ paddingBottom: 40 }}>
-              <Text className="mb-1 text-[12px] font-semibold text-[#2D2D2D]">Task</Text>
+            <ScrollView className="flex-1 px-5" contentContainerStyle={{ paddingTop: 20, paddingBottom: 40 }}>
+              <Text className="mb-1.5 text-[12px] font-semibold text-[#2D2D2D]">Task</Text>
               <TouchableOpacity
                 onPress={() => setIsTaskModalVisible(true)}
                 className="mb-4 flex-row items-center justify-between rounded-xl border border-[#E7E7EE] bg-[#FAFAFA] px-4"
@@ -516,11 +615,7 @@ export default function UploadSiteProgressScreen({ visible, user, onClose, proje
                 />
               )}
 
-
-
-
-
-              <Text className="mb-1 text-[12px] font-semibold text-[#2D2D2D]">Notes / Comments</Text>
+              <Text className="mb-1.5 mt-2 text-[12px] font-semibold text-[#2D2D2D]">Notes / Comments</Text>
               <TextInput
                 value={notes}
                 onChangeText={setNotes}
@@ -530,42 +625,40 @@ export default function UploadSiteProgressScreen({ visible, user, onClose, proje
                 multiline
               />
 
-              {/* Glass Count Display */}
-              <View className="mt-8 mb-6 rounded-2xl border border-[#D3D0FF] bg-[#F8F7FF] p-4">
-
-                <View className="flex-row items-center justify-between mb-4">
+              {/* Glass Count Display (Compact) */}
+              <View className="mt-6 mb-4 rounded-2xl border border-[#D3D0FF] bg-[#F8F7FF] p-4">
+                <View className="flex-row items-center justify-between mb-3">
                   <View className="flex-row items-center">
-                    <View className="mr-3 h-10 w-10 items-center justify-center rounded-full bg-[#EAE8FF]">
-                      <Ionicons name="apps" size={20} color={PRIMARY} />
+                    <View className="mr-3 h-8 w-8 items-center justify-center rounded-full bg-[#EAE8FF]">
+                      <Ionicons name="apps" size={16} color={PRIMARY} />
                     </View>
-                    <Text className="text-[14px] font-semibold text-[#1E1E1E]">
+                    <Text className="text-[13px] font-semibold text-[#1E1E1E]">
                       Glass Panels Count
                     </Text>
                   </View>
                 </View>
                 
-                <View className="flex-row items-center justify-between bg-white rounded-xl border border-[#E0E0E0] p-3">
+                <View className="flex-row items-center justify-between bg-white rounded-xl border border-[#E0E0E0] p-2 px-4">
                   <TouchableOpacity 
                     onPress={() => setGlassCount(Math.max(0, glassCount - 1))}
-                    className="h-10 w-10 items-center justify-center rounded-full bg-gray-100">
-                      <Ionicons name="remove" size={24} color={PRIMARY} />
+                    className="h-8 w-8 items-center justify-center rounded-full bg-gray-100">
+                      <Ionicons name="remove" size={20} color={PRIMARY} />
                   </TouchableOpacity>
                   
                   <TextInput
                     value={String(glassCount)}
                     onChangeText={(v) => setGlassCount(parseInt(v) || 0)}
                     keyboardType="numeric"
-                    className="text-[24px] font-bold text-[#7370FF] text-center"
-                    style={{ minWidth: 60 }}
+                    className="text-[20px] font-bold text-[#7370FF] text-center"
+                    style={{ minWidth: 50 }}
                   />
                   
                   <TouchableOpacity 
                     onPress={() => setGlassCount(glassCount + 1)}
-                    className="h-10 w-10 items-center justify-center rounded-full bg-[#7370FF]">
-                      <Ionicons name="add" size={24} color="white" />
+                    className="h-8 w-8 items-center justify-center rounded-full bg-[#7370FF]">
+                      <Ionicons name="add" size={20} color="white" />
                   </TouchableOpacity>
                 </View>
-                <Text className="mt-2 text-center text-[10px] text-gray-400">Verify and adjust the count above</Text>
               </View>
 
             </ScrollView>
@@ -618,6 +711,7 @@ export default function UploadSiteProgressScreen({ visible, user, onClose, proje
           </View>
         )}
       </View>
+    </KeyboardAvoidingView>
 
       {/* ── Task Selection Modal ── */}
       <Modal visible={isTaskModalVisible} animationType="slide" transparent>

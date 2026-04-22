@@ -187,37 +187,48 @@ export default function SiteUpdatesScreen({ visible, onClose, projectName }: Pro
               <View>
                 {/* Photo Container */}
                 <View className="mb-6">
-                  <View className="relative h-[240px] w-full overflow-hidden rounded-[24px] bg-[#F0F0F0]">
-                    {currentUpdate?.photo_url ? (
-                      <Image
-                        source={{
-                          uri: currentUpdate.photo_url.startsWith('http')
-                            ? currentUpdate.photo_url
-                            : `${API_URL}${currentUpdate.photo_url}`,
-                        }}
-                        className="h-full w-full"
-                        resizeMode="cover"
-                      />
-                    ) : (
-                      <View className="flex-1 items-center justify-center">
+                  {(() => {
+                    let photos: string[] = [];
+                    try {
+                      if (currentUpdate?.photo_url) {
+                        const parsed = JSON.parse(currentUpdate.photo_url);
+                        photos = Array.isArray(parsed) ? parsed : [currentUpdate.photo_url];
+                      }
+                    } catch (e) {
+                      if (currentUpdate?.photo_url) photos = [currentUpdate.photo_url];
+                    }
+
+                    if (photos.length > 0) {
+                      return (
+                        <ScrollView horizontal showsHorizontalScrollIndicator={false} className="flex-row">
+                          {photos.map((p, idx) => (
+                            <View key={idx} className="relative h-[240px] w-[300px] mr-4 overflow-hidden rounded-[24px] bg-[#F0F0F0]">
+                              <Image
+                                source={{
+                                  uri: p.startsWith('http') ? p : `${API_URL}${p}`,
+                                }}
+                                className="h-full w-full"
+                                resizeMode="cover"
+                              />
+                              {/* Count Badge on the first photo or each photo? Let's show on each for clarity */}
+                              <View className="absolute bottom-4 right-4 rounded-full bg-[#5DBF50]/90 px-3 py-1 shadow-sm">
+                                <Text className="text-[10px] font-bold text-white">
+                                  {currentUpdate?.glass_count || 0} installed
+                                </Text>
+                              </View>
+                            </View>
+                          ))}
+                        </ScrollView>
+                      );
+                    }
+
+                    return (
+                      <View className="h-[240px] w-full items-center justify-center rounded-[24px] bg-[#F0F0F0]">
                         <Ionicons name="image-outline" size={48} color="#D1D1D6" />
                         <Text className="text-[12px] text-gray-400 mt-2">No photo for this shift</Text>
                       </View>
-                    )}
-                    
-                    {/* Precision Count Badge (as per Figure 122) */}
-                    {currentUpdate && (
-                      <View
-                        className="absolute rounded-sm border-2 border-[#7370FF]"
-                        style={{ top: '35%', left: '42%', width: '20%', height: '30%' }}>
-                        <View className="absolute -bottom-6 left-1/2 -ml-[40px] rounded-full bg-[#5DBF50]/90 px-3 py-0.5 shadow-sm">
-                          <Text className="text-[10px] font-bold text-white">
-                            {currentUpdate.glass_count || 8} installed
-                          </Text>
-                        </View>
-                      </View>
-                    )}
-                  </View>
+                    );
+                  })()}
                 </View>
 
                 {/* Metadata Grid */}

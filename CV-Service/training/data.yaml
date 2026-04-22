@@ -1,0 +1,43 @@
+# ══════════════════════════════════════════════════════════════════════
+#  BuildSphere — Glass Panel Dataset Configuration (YOLO Format)
+# ══════════════════════════════════════════════════════════════════════
+#
+#  This file tells Ultralytics YOLO where to find images and labels.
+#
+#  DIRECTORY STRUCTURE EXPECTED:
+#    datasets/
+#    └── glass_panels/
+#        ├── images/
+#        │   ├── train/       ← 70% of annotated images
+#        │   ├── val/         ← 20% of annotated images
+#        │   └── test/        ← 10% of annotated images
+#        └── labels/
+#            ├── train/       ← Matching .txt annotation files
+#            ├── val/
+#            └── test/
+#
+#  ANNOTATION FORMAT (each .txt file):
+#    class_id  center_x  center_y  width  height
+#    (all values normalized 0-1, one line per object)
+#
+#  Example:
+#    0 0.45 0.32 0.12 0.28
+#    0 0.72 0.55 0.15 0.30
+#
+# ══════════════════════════════════════════════════════════════════════
+
+# ── Paths (relative to where you run training from) ───────────────────
+path: ./datasets/glass_panels    # Root directory of the dataset
+train: images/train              # Training images (relative to 'path')
+val: images/val                  # Validation images (relative to 'path')
+test: images/test                # Test images (relative to 'path')
+
+# ── Classes ───────────────────────────────────────────────────────────
+# Single class detection: glass panels only.
+# If you later want to distinguish types (e.g., tempered, laminated),
+# add them here and update the annotations.
+names:
+  0: glass_panel
+
+# Number of classes
+nc: 1
