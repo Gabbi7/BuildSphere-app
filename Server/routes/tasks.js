@@ -114,16 +114,13 @@ router.post('/', async (req, res) => {
       ]
     );
     const task = result.rows[0];
+    const notifTitle = 'Task Assignment';
+    const notifMessage = `New task assigned: '${title}' due ${due_date}.`;
 
-    // Create notification
+    // Create database notification
     await pool.query(
       'INSERT INTO "public"."notifications" (type, title, message, user_id) VALUES ($1, $2, $3, $4)',
-      [
-        'update',
-        'Task Assignment',
-        `New task assigned: '${title}' due ${due_date}.`,
-        user_id,
-      ]
+      ['update', notifTitle, notifMessage, user_id]
     );
 
     res.status(201).json(task);

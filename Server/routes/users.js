@@ -93,4 +93,19 @@ router.patch('/:id/account', async (req, res) => {
   }
 });
 
+// PATCH /users/:id/push-token — save Expo Push Token
+router.patch('/:id/push-token', async (req, res) => {
+  const { pushToken } = req.body;
+  try {
+    await pool.query('UPDATE users SET push_token = $1 WHERE id = $2', [
+      pushToken,
+      req.params.id,
+    ]);
+    res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to save push token.' });
+  }
+});
+
 module.exports = router;

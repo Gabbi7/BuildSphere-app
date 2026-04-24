@@ -20,15 +20,8 @@ export default function ProjectCard({
   image,
   onAction,
 }: ProjectCardProps) {
-  // Extract hex from bg-[#XXX] or use a default
-  const bgMap: Record<string, string> = {
-    'bg-[#FFD6F3]': '#FFD6F3',
-    'bg-[#E5D4FF]': '#E5D4FF',
-    'bg-[#D4E5FF]': '#D4E5FF',
-    'bg-[#FFE5E5]': '#FFE5E5',
-    'bg-[#E5FFE5]': '#E5FFE5',
-  };
-  const bannerColor = bgMap[color] || '#FFD6F3';
+  // Use the color directly (it's a hex code) or fallback to Soft Pink
+  const bannerColor = color || '#FFD6F3';
 
   return (
     <View
@@ -62,8 +55,11 @@ export default function ProjectCard({
       <View className="px-5 pt-4">
         <View className="flex-row items-center mb-3">
           {/* Icon Circle */}
-          <View className="mr-3 h-10 w-10 items-center justify-center rounded-full bg-[#FFE5F6]">
-            <FontAwesome5 name="building" size={20} color="#FF69B4" />
+          <View 
+            style={{ backgroundColor: `${bannerColor}26` }} // 26 is ~15% opacity in hex
+            className="mr-3 h-10 w-10 items-center justify-center rounded-full"
+          >
+            <FontAwesome5 name="building" size={20} color={bannerColor} />
           </View>
 
           <View className="flex-1">

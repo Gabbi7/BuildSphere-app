@@ -30,7 +30,7 @@ router.get('/', async (req, res) => {
       ...row,
       name: row.name || row.project_name || 'Unnamed Project',
       location: row.location || row.address || 'Unknown Location',
-      color: row.color || '#7370FF',
+      color: row.color || '#FFD6F3',
       progress: parseInt(row.progress) || 0
     }));
     
@@ -83,15 +83,15 @@ router.get('/:id', async (req, res) => {
 // UPDATE /projects/:id
 router.put('/:id', async (req, res) => {
   const { id } = req.params;
-  const { project_name, address, status, start_date, end_date, budget_for_materials, description } = req.body;
+  const { project_name, address, status, start_date, end_date, budget_for_materials, description, color } = req.body;
   
   try {
     const result = await pool.query(
       `UPDATE projects 
        SET project_name = $1, address = $2, status = $3, start_date = $4, end_date = $5, 
-           budget_for_materials = $6, description = $7, updated_at = NOW()
-       WHERE id = $8 RETURNING *`,
-      [project_name, address, status, start_date, end_date, budget_for_materials, description, id]
+           budget_for_materials = $6, description = $7, color = $8, updated_at = NOW()
+       WHERE id = $9 RETURNING *`,
+      [project_name, address, status, start_date, end_date, budget_for_materials, description, color, id]
     );
 
     if (result.rows.length === 0) {
@@ -105,6 +105,19 @@ router.put('/:id', async (req, res) => {
   }
 });
 
+// PATCH /projects/:id/color
+router.patch('/:id/color', async (req, res) => {
+  const { id } = req.params;
+  const { color } = req.body;
+  try {
+    const result = await pool.query('UPDATE projects SET color = $1 WHERE id = $2 RETURNING *', [color, id]);
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Project not found.' });
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to update color.' });
+  }
+});
+
 // DELETE /projects/:id
 router.delete('/:id', async (req, res) => {
   try {
@@ -113,6 +126,17 @@ router.delete('/:id', async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Failed to delete project.' });
+  }
+});
+
+// PATCH /projects/all/color — Update color for ALL projects
+router.patch('/all/color', async (req, res) => {
+  const { color } = req.body;
+  try {
+    await pool.query('UPDATE projects SET color = $1', [color]);
+    res.json({ success: true, color });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to update all project colors.' });
   }
 });
 

@@ -73,16 +73,16 @@ router.post('/', upload.array('photos', 5), async (req, res) => {
       ]
     );
     const progress = result.rows[0];
-
-
+    const notifTitle = 'Task Progress Recorded';
+    const notifMessage = `Progress of ${quantityInstalled || glassCount} units recorded for task #${taskId}.`;
 
     // Notification handling (Simplified for now)
     await pool.query(
       'INSERT INTO notifications (type, title, message, user_id) VALUES ($1, $2, $3, $4)',
       [
         'success',
-        'Task Progress Recorded',
-        `Progress of ${quantityInstalled || glassCount} units recorded for task #${taskId}.`,
+        notifTitle,
+        notifMessage,
         userId,
       ]
     );
