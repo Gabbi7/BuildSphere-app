@@ -32,6 +32,8 @@ interface HomeScreenProps {
   onLogout: () => void;
   user: UserInfo;
   onUserUpdated: (updated: UserInfo) => void;
+  notificationData?: Record<string, any> | null;
+  onNotificationHandled?: () => void;
 }
 
 interface Project {
@@ -60,6 +62,8 @@ export default function HomeScreen({
   onLogout,
   user: initialUser,
   onUserUpdated,
+  notificationData,
+  onNotificationHandled,
 }: HomeScreenProps) {
   const [activeTab, setActiveTab] = useState<'home' | 'mywork' | 'notifications' | 'more'>('home');
   const [projects, setProjects] = useState<Project[]>([]);
@@ -242,6 +246,28 @@ export default function HomeScreen({
   useEffect(() => {
     fetchProjects();
   }, []);
+
+  useEffect(() => {
+    if (!notificationData) return;
+
+    const screen = String(notificationData.screen || '');
+    const taskId = Number(notificationData.task_id);
+    const projectId = Number(notificationData.project_id);
+
+    if (screen === 'TaskDetails' && Number.isFinite(taskId)) {
+      setActiveTab('mywork');
+      handleNotifNavigateToTask(taskId);
+    } else if (screen === 'SiteProgressDetails') {
+      setActiveTab('mywork');
+    } else if (screen === 'ProjectDetails' && Number.isFinite(projectId)) {
+      setActiveTab('home');
+      setSelectedProjectId(projectId);
+    } else {
+      setActiveTab('notifications');
+    }
+
+    onNotificationHandled?.();
+  }, [notificationData]);
 
   const toggleFab = () => {
     const toValue = fabOpen ? 0 : 1;
@@ -541,7 +567,12 @@ export default function HomeScreen({
       />
       {showInventory && inventoryProjectId && (
         <Modal visible={showInventory} animationType="slide" transparent={false}>
-          <InventoryScreen projectId={inventoryProjectId} onBack={() => setShowInventory(false)} userRole={user.role} />
+          <InventoryScreen
+            projectId={inventoryProjectId}
+            onBack={() => setShowInventory(false)}
+            userRole={user.role}
+            userId={user.id}
+          />
         </Modal>
       )}
 

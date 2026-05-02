@@ -15,6 +15,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { API_URL } from '../../lib/api';
 import { UserInfo } from '../../App';
 import * as FileSystem from 'expo-file-system/legacy';
+import DateTimePicker from '@react-native-community/datetimepicker';
 
 interface EditProfileScreenProps {
   user: UserInfo;
@@ -26,10 +27,19 @@ const PRIMARY = '#7370FF';
 
 export default function EditProfileScreen({ user, onBack, onSaved }: EditProfileScreenProps) {
   const [firstName, setFirstName] = useState(user.firstName);
+  const [middleName, setMiddleName] = useState(user.middleName || '');
   const [lastName, setLastName] = useState(user.lastName);
+  const [suffix, setSuffix] = useState(user.suffix || '');
+  const [phoneNumber, setPhoneNumber] = useState(user.phoneNumber || '');
+  const [gender, setGender] = useState(user.gender || 'Prefer not to say');
+  const [birthdate, setBirthdate] = useState<Date | null>(user.birthdate ? new Date(user.birthdate) : null);
+  const [address, setAddress] = useState(user.address || '');
+  const [department, setDepartment] = useState(user.department || '');
+  const [position, setPosition] = useState(user.position || '');
   const [localImageUri, setLocalImageUri] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [showDatePicker, setShowDatePicker] = useState(false);
 
   const initials = `${(firstName || '').charAt(0)}${(lastName || '').charAt(0)}`.toUpperCase();
 
@@ -41,6 +51,18 @@ export default function EditProfileScreen({ user, onBack, onSaved }: EditProfile
   };
 
   const displayImageUri = localImageUri || getPhotoUri(user.profilePictureUrl);
+  const age =
+    birthdate
+      ? Math.max(
+          0,
+          new Date().getFullYear() - birthdate.getFullYear() -
+            (new Date().getMonth() < birthdate.getMonth() ||
+            (new Date().getMonth() === birthdate.getMonth() &&
+              new Date().getDate() < birthdate.getDate())
+              ? 1
+              : 0)
+        )
+      : null;
 
   const pickImage = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -104,6 +126,14 @@ export default function EditProfileScreen({ user, onBack, onSaved }: EditProfile
       Alert.alert('Missing info', 'First and last name are required.');
       return;
     }
+    if (birthdate && birthdate.getTime() > Date.now()) {
+      Alert.alert('Invalid birthdate', 'Birthdate cannot be in the future.');
+      return;
+    }
+    if (phoneNumber && !/^[+\d\s()-]{7,20}$/.test(phoneNumber)) {
+      Alert.alert('Invalid phone', 'Enter a valid phone number.');
+      return;
+    }
     setSaving(true);
     try {
       // Upload photo first if changed
@@ -115,7 +145,15 @@ export default function EditProfileScreen({ user, onBack, onSaved }: EditProfile
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           firstName,
+          middleName,
           lastName,
+          suffix,
+          phoneNumber,
+          gender,
+          birthdate: birthdate ? birthdate.toISOString().slice(0, 10) : null,
+          address,
+          department,
+          position,
           profilePictureUrl: newPhotoUrl,
         }),
       });
@@ -128,7 +166,15 @@ export default function EditProfileScreen({ user, onBack, onSaved }: EditProfile
       onSaved({
         ...user,
         firstName: data.firstName,
+        middleName: data.middleName,
         lastName: data.lastName,
+        suffix: data.suffix,
+        phoneNumber: data.phoneNumber,
+        gender: data.gender,
+        birthdate: data.birthdate,
+        address: data.address,
+        department: data.department,
+        position: data.position,
         profilePictureUrl: data.profilePictureUrl || user.profilePictureUrl,
       });
       Alert.alert('Saved!', 'Your profile has been updated.');
@@ -213,6 +259,55 @@ export default function EditProfileScreen({ user, onBack, onSaved }: EditProfile
           placeholder="Last name"
           placeholderTextColor="#B9B9B9"
         />
+
+        <Text className="mb-2 mt-5 text-[12px] font-semibold text-[#2D2D2D]">Middle Name (optional)</Text>
+        <TextInput value={middleName} onChangeText={setMiddleName} style={inputStyle} placeholder="Middle name" placeholderTextColor="#B9B9B9" />
+
+        <Text className="mb-2 mt-5 text-[12px] font-semibold text-[#2D2D2D]">Suffix (optional)</Text>
+        <TextInput value={suffix} onChangeText={setSuffix} style={inputStyle} placeholder="e.g. Jr., Sr., III" placeholderTextColor="#B9B9B9" />
+
+        <Text className="mb-2 mt-5 text-[12px] font-semibold text-[#2D2D2D]">Phone Number (optional)</Text>
+        <TextInput value={phoneNumber} onChangeText={setPhoneNumber} style={inputStyle} placeholder="+63..." placeholderTextColor="#B9B9B9" keyboardType="phone-pad" />
+
+        <Text className="mb-2 mt-5 text-[12px] font-semibold text-[#2D2D2D]">Gender</Text>
+        <View className="mb-2 flex-row flex-wrap">
+          {['Male', 'Female', 'Prefer not to say', 'Other'].map((g) => (
+            <TouchableOpacity
+              key={g}
+              onPress={() => setGender(g)}
+              className={`mb-2 mr-2 rounded-full border px-3 py-2 ${gender === g ? 'border-[#7370FF] bg-[#F4F3FF]' : 'border-[#E5E5E5] bg-white'}`}>
+              <Text className={`text-[12px] ${gender === g ? 'text-[#7370FF]' : 'text-[#666]'}`}>{g}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        <Text className="mb-2 mt-4 text-[12px] font-semibold text-[#2D2D2D]">Birthdate (optional)</Text>
+        <TouchableOpacity onPress={() => setShowDatePicker(true)} style={[inputStyle, { justifyContent: 'center' }]}>
+          <Text className="text-[14px] text-[#1E1E1E]">
+            {birthdate ? birthdate.toLocaleDateString() : 'Select birthdate'}
+          </Text>
+        </TouchableOpacity>
+        <Text className="mb-1 text-[12px] text-[#7A7A7A]">Age: {age !== null ? age : 'N/A'}</Text>
+        {showDatePicker && (
+          <DateTimePicker
+            value={birthdate || new Date(2000, 0, 1)}
+            mode="date"
+            maximumDate={new Date()}
+            onChange={(_, selectedDate) => {
+              setShowDatePicker(false);
+              if (selectedDate) setBirthdate(selectedDate);
+            }}
+          />
+        )}
+
+        <Text className="mb-2 mt-5 text-[12px] font-semibold text-[#2D2D2D]">Address (optional)</Text>
+        <TextInput value={address} onChangeText={setAddress} style={inputStyle} placeholder="Address" placeholderTextColor="#B9B9B9" />
+
+        <Text className="mb-2 mt-5 text-[12px] font-semibold text-[#2D2D2D]">Department (optional)</Text>
+        <TextInput value={department} onChangeText={setDepartment} style={inputStyle} placeholder="Department" placeholderTextColor="#B9B9B9" />
+
+        <Text className="mb-2 mt-5 text-[12px] font-semibold text-[#2D2D2D]">Position (optional)</Text>
+        <TextInput value={position} onChangeText={setPosition} style={inputStyle} placeholder="Position / job title" placeholderTextColor="#B9B9B9" />
       </ScrollView>
     </View>
   );

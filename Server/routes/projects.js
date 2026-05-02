@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const pool = require('../db');
+const { sendPushNotificationToUser } = require('../services/pushNotificationService');
 
 // GET /projects
 router.get('/', async (req, res) => {
@@ -86,6 +87,12 @@ router.put('/:id', async (req, res) => {
   const { project_name, address, status, start_date, end_date, budget_for_materials, description, color } = req.body;
   
   try {
+    const beforeResult = await pool.query(
+      'SELECT id, project_name, status, project_in_charge_id FROM projects WHERE id = $1',
+      [id]
+    );
+    const beforeProject = beforeResult.rows[0];
+
     const result = await pool.query(
       `UPDATE projects 
        SET project_name = $1, address = $2, status = $3, start_date = $4, end_date = $5, 
@@ -96,6 +103,30 @@ router.put('/:id', async (req, res) => {
 
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Project not found.' });
+    }
+
+    const updatedProject = result.rows[0];
+    const statusChanged =
+      beforeProject &&
+      String(beforeProject.status || '').toLowerCase() !== String(updatedProject.status || '').toLowerCase();
+
+    if (statusChanged && beforeProject.project_in_charge_id) {
+      const statusText = String(updatedProject.status || '').toLowerCase();
+      const isDelayWarning = statusText.includes('delay') || statusText.includes('risk');
+
+      await sendPushNotificationToUser(
+        beforeProject.project_in_charge_id,
+        isDelayWarning ? 'Project Delay Warning' : 'Milestone Updated',
+        isDelayWarning
+          ? `AI assessment detected a potential delay risk in ${updatedProject.project_name || 'your project'}.`
+          : `Project status changed to ${updatedProject.status}.`,
+        {
+          type: isDelayWarning ? 'project_delay_warning' : 'milestone_updated',
+          screen: 'ProjectDetails',
+          project_id: String(updatedProject.id),
+          status: updatedProject.status,
+        }
+      );
     }
 
     res.json(result.rows[0]);

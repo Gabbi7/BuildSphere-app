@@ -5,6 +5,7 @@ const multer = require('multer');
 const path = require('path');
 const pool = require('../db');
 const { createClient } = require('@supabase/supabase-js');
+const { sendPushNotificationToUser } = require('../services/pushNotificationService');
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
@@ -92,15 +93,78 @@ router.post('/', upload.array('photos', 5), async (req, res) => {
     const notifMessage = `Progress of ${quantityInstalled || glassCount} units recorded for task #${taskId}.`;
 
     // Notification handling (Simplified for now)
-    await pool.query(
-      'INSERT INTO notifications (type, title, message, user_id) VALUES ($1, $2, $3, $4)',
-      [
-        'success',
-        notifTitle,
-        notifMessage,
-        userId,
-      ]
+    try {
+      await pool.query(
+        'INSERT INTO notifications (type, title, message, user_id) VALUES ($1, $2, $3, $4)',
+        [
+          'success',
+          notifTitle,
+          notifMessage,
+          userId,
+        ]
+      );
+    } catch (insertErr) {
+      await pool.query(
+        'INSERT INTO notifications (type, title, body, user_id, data, is_read, created_at) VALUES ($1, $2, $3, $4, $5, false, NOW())',
+        ['success', notifTitle, notifMessage, userId, { type: 'site_progress_uploaded' }]
+      );
+    }
+
+    const projectUsersResult = await pool.query(
+      `SELECT DISTINCT candidate_user_id AS user_id
+       FROM (
+         SELECT p.project_in_charge_id AS candidate_user_id
+         FROM projects p
+         WHERE p.id = $1
+         UNION
+         SELECT t.assigned_to AS candidate_user_id
+         FROM tasks t
+         WHERE t.project_id = $1
+       ) users_for_project
+       WHERE candidate_user_id IS NOT NULL`,
+      [projectId]
     );
+
+    const projectNameResult = await pool.query('SELECT project_name FROM projects WHERE id = $1', [projectId]);
+    const projectName = projectNameResult.rows[0]?.project_name || 'this project';
+
+    for (const row of projectUsersResult.rows) {
+      if (String(row.user_id) === String(userId)) continue;
+
+      await sendPushNotificationToUser(
+        row.user_id,
+        'New Site Progress Update',
+        `A new site progress update was uploaded for ${projectName}.`,
+        {
+          type: 'site_progress_uploaded',
+          screen: 'SiteProgressDetails',
+          project_id: String(projectId),
+          site_progress_id: String(progress.id),
+          task_id: String(taskId),
+        }
+      );
+    }
+
+    if (ai_detected_count != null) {
+      const count = parseInt(ai_detected_count) || 0;
+      const targetUsers = projectUsersResult.rows
+        .map((r) => r.user_id)
+        .filter((id) => String(id) !== String(userId));
+      for (const targetUserId of targetUsers) {
+        await sendPushNotificationToUser(
+          targetUserId,
+          'Glass Panel Analysis Complete',
+          `AI detected ${count} glass panels. Please verify the count.`,
+          {
+            type: 'glass_analysis_completed',
+            screen: 'SiteProgressDetails',
+            project_id: String(projectId),
+            site_progress_id: String(progress.id),
+            task_id: String(taskId),
+          }
+        );
+      }
+    }
 
     res.json(progress);
   } catch (err) {

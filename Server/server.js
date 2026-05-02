@@ -25,6 +25,7 @@ app.use('/auth', authRoutes);
 app.use('/projects', projectsRoutes);
 app.use('/tasks', tasksRoutes);
 app.use('/notifications', notificationsRoutes);
+app.use('/api/notifications', notificationsRoutes);
 app.use('/users', usersRoutes);
 app.use('/upload', uploadRoutes);
 app.use('/site-progress', siteProgressRoutes);
@@ -33,6 +34,6 @@ app.use('/inventory', inventoryRoutes);
 app.get('/', (req, res) => res.send('BuildSphere API is running ✅'));
 
 const PORT = 3001;
-app.listen(PORT, () => {
-  console.log(`✅ BuildSphere API running at http://localhost:${PORT}`);
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`✅ BuildSphere API running at http://0.0.0.0:${PORT}`);
 });

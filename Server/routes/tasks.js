@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const pool = require('../db');
+const { sendPushNotificationToUser } = require('../services/pushNotificationService');
 
 // GET /tasks?userId=xxx
 router.get('/', async (req, res) => {
@@ -91,6 +92,7 @@ router.post('/', async (req, res) => {
     phase,
     milestone,
     start_date,
+    created_by,
   } = req.body;
 
   if (!title || !project_id || !due_date || !user_id) {
@@ -118,10 +120,33 @@ router.post('/', async (req, res) => {
     const notifMessage = `New task assigned: '${title}' due ${due_date}.`;
 
     // Create database notification
-    await pool.query(
-      'INSERT INTO "public"."notifications" (type, title, message, user_id) VALUES ($1, $2, $3, $4)',
-      ['update', notifTitle, notifMessage, user_id]
-    );
+    try {
+      await pool.query(
+        'INSERT INTO "public"."notifications" (type, title, message, user_id) VALUES ($1, $2, $3, $4)',
+        ['update', notifTitle, notifMessage, user_id]
+      );
+    } catch (insertErr) {
+      await pool.query(
+        'INSERT INTO "public"."notifications" (type, title, body, user_id, data, is_read, created_at) VALUES ($1, $2, $3, $4, $5, false, NOW())',
+        ['update', notifTitle, notifMessage, user_id, { type: 'task_assigned' }]
+      );
+    }
+
+    if (!created_by || String(created_by) !== String(user_id)) {
+      const projectRes = await pool.query('SELECT project_name FROM projects WHERE id = $1', [project_id]);
+      const projectName = projectRes.rows[0]?.project_name || 'this project';
+      await sendPushNotificationToUser(
+        user_id,
+        'New Task Assigned',
+        `You have been assigned a new task for ${projectName}.`,
+        {
+          type: 'task_assigned',
+          screen: 'TaskDetails',
+          task_id: String(task.id),
+          project_id: String(project_id),
+        }
+      );
+    }
 
     res.status(201).json(task);
   } catch (err) {
@@ -148,6 +173,12 @@ router.patch('/:id', async (req, res) => {
   const setClause = keys.map((key, i) => `${key} = $${i + 1}`).join(', ');
   
   try {
+    const currentTaskResult = await pool.query(
+      'SELECT id, title, status, assigned_to, project_id, updated_by FROM "public"."tasks" WHERE id = $1',
+      [id]
+    );
+    const currentTask = currentTaskResult.rows[0];
+
     const result = await pool.query(
       `UPDATE "public"."tasks" SET ${setClause}, updated_at = NOW() WHERE id = $${keys.length + 1} RETURNING *`,
       [...values, id]
@@ -159,6 +190,31 @@ router.patch('/:id', async (req, res) => {
     }
     
     console.log(`TASK ${id} UPDATED SUCCESSFULLY`);
+
+    const updatedTask = result.rows[0];
+    const actorId = updates.updated_by || currentTask?.updated_by;
+
+    if (
+      currentTask &&
+      updates.status &&
+      String(updates.status).toLowerCase() !== String(currentTask.status || '').toLowerCase() &&
+      currentTask.assigned_to &&
+      String(actorId || '') !== String(currentTask.assigned_to)
+    ) {
+      await sendPushNotificationToUser(
+        currentTask.assigned_to,
+        'Task Status Updated',
+        `Task "${currentTask.title}" is now ${updates.status}.`,
+        {
+          type: 'task_status_updated',
+          screen: 'TaskDetails',
+          task_id: String(updatedTask.id),
+          project_id: String(updatedTask.project_id || currentTask.project_id || ''),
+          status: updates.status,
+        }
+      );
+    }
+
     res.json(result.rows[0]);
   } catch (err) {
     console.error('DATABASE UPDATE ERROR:', err.message);

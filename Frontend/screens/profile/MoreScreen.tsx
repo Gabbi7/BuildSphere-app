@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, Image, Alert } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, TouchableOpacity, ScrollView, Image, Alert, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { UserInfo } from '../../App';
 import EditProfileScreen from './EditProfileScreen';
@@ -14,23 +14,64 @@ interface MoreScreenProps {
 
 export default function MoreScreen({ user, onLogout, onUserUpdated }: MoreScreenProps) {
   const [screen, setScreen] = useState<'more' | 'editProfile' | 'editAccount'>('more');
+  const [profile, setProfile] = useState<UserInfo>(user);
+  const [loadingProfile, setLoadingProfile] = useState(false);
 
-  const firstName = user.firstName || '';
-  const lastName = user.lastName || '';
+  useEffect(() => {
+    setProfile(user);
+  }, [user]);
+
+  useEffect(() => {
+    const loadProfile = async () => {
+      setLoadingProfile(true);
+      try {
+        const res = await fetch(`${API_URL}/users/${user.id}`);
+        if (res.ok) {
+          const data = await res.json();
+          setProfile((prev) => ({ ...prev, ...data }));
+        }
+      } catch (err) {
+        console.error('Profile fetch failed:', err);
+      } finally {
+        setLoadingProfile(false);
+      }
+    };
+    loadProfile();
+  }, [user.id]);
+
+  const firstName = profile.firstName || '';
+  const middleName = profile.middleName || '';
+  const lastName = profile.lastName || '';
+  const suffix = profile.suffix || '';
   const initials = `${firstName.charAt(0)}${lastName.charAt(0)}`.toUpperCase();
 
-  const photoUri = user.profilePictureUrl
-    ? user.profilePictureUrl.startsWith('http')
-      ? user.profilePictureUrl
-      : `${API_URL}${user.profilePictureUrl}`
+  const photoUri = profile.profilePictureUrl
+    ? profile.profilePictureUrl.startsWith('http')
+      ? profile.profilePictureUrl
+      : `${API_URL}${profile.profilePictureUrl}`
     : null;
+
+  const fullName = [firstName, middleName, lastName, suffix].filter(Boolean).join(' ');
+  const age =
+    profile.birthdate
+      ? Math.max(
+          0,
+          new Date().getFullYear() - new Date(profile.birthdate).getFullYear() -
+            (new Date().getMonth() < new Date(profile.birthdate).getMonth() ||
+            (new Date().getMonth() === new Date(profile.birthdate).getMonth() &&
+              new Date().getDate() < new Date(profile.birthdate).getDate())
+              ? 1
+              : 0)
+        )
+      : null;
 
   if (screen === 'editProfile') {
     return (
       <EditProfileScreen
-        user={user}
+        user={profile}
         onBack={() => setScreen('more')}
         onSaved={(updated) => {
+          setProfile(updated);
           onUserUpdated(updated);
           setScreen('more');
         }}
@@ -41,9 +82,10 @@ export default function MoreScreen({ user, onLogout, onUserUpdated }: MoreScreen
   if (screen === 'editAccount') {
     return (
       <EditAccountScreen
-        user={user}
+        user={profile}
         onBack={() => setScreen('more')}
         onSaved={(updated) => {
+          setProfile(updated);
           onUserUpdated(updated);
           setScreen('more');
         }}
@@ -83,14 +125,28 @@ export default function MoreScreen({ user, onLogout, onUserUpdated }: MoreScreen
             </View>
           )}
 
-          <Text className="mt-4 text-[20px] font-bold text-[#1E1E1E]">
-            {user.firstName} {user.lastName}
-          </Text>
-          <Text className="mt-1 text-[13px] text-[#A3A3A3]">{user.email}</Text>
+          {loadingProfile && <ActivityIndicator className="mt-2" color="#7370FF" />}
+          <Text className="mt-4 text-[20px] font-bold text-[#1E1E1E]">{fullName || 'Unnamed User'}</Text>
+          <Text className="mt-1 text-[13px] text-[#A3A3A3]">{profile.email}</Text>
+          <Text className="mt-1 text-[12px] uppercase text-[#7D7D7D]">{profile.role || 'staff'}</Text>
 
           <TouchableOpacity onPress={() => setScreen('editProfile')} className="mt-2">
             <Text className="text-[13px] font-semibold text-[#7370FF]">Edit Profile</Text>
           </TouchableOpacity>
+        </View>
+
+        <View className="mb-6 rounded-2xl border border-[#F0F0F0] bg-white p-4">
+          <Text className="mb-3 text-[14px] font-bold text-[#1E1E1E]">Profile Information</Text>
+          <Text className="mb-1 text-[13px] text-[#666]">Phone: {profile.phoneNumber || 'Not set'}</Text>
+          <Text className="mb-1 text-[13px] text-[#666]">Gender: {profile.gender || 'Not set'}</Text>
+          <Text className="mb-1 text-[13px] text-[#666]">
+            Birthdate: {profile.birthdate ? new Date(profile.birthdate).toLocaleDateString() : 'Not set'}
+          </Text>
+          <Text className="mb-1 text-[13px] text-[#666]">Age: {age !== null ? age : 'Not set'}</Text>
+          <Text className="mb-1 text-[13px] text-[#666]">Department: {profile.department || 'Not set'}</Text>
+          <Text className="mb-1 text-[13px] text-[#666]">Position: {profile.position || 'Not set'}</Text>
+          <Text className="mb-1 text-[13px] text-[#666]">Address: {profile.address || 'Not set'}</Text>
+          <Text className="text-[13px] text-[#666]">Status: {profile.accountStatus || 'active'}</Text>
         </View>
 
         {/* Menu Items */}
