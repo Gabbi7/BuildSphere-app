@@ -30,6 +30,12 @@ app.use('/users', usersRoutes);
 app.use('/upload', uploadRoutes);
 app.use('/site-progress', siteProgressRoutes);
 app.use('/inventory', inventoryRoutes);
+// Phase 2 spec path: /api/projects/:projectId/inventory
+app.use('/api/projects/:projectId/inventory', (req, res, next) => {
+  // Inject projectId into query for route handlers that expect it
+  req.query.projectId = req.query.projectId || req.params.projectId;
+  next();
+}, inventoryRoutes);
 
 app.get('/', (req, res) => res.send('BuildSphere API is running ✅'));
 

@@ -4,7 +4,7 @@ const http = require('http');
 const title = "Hello from BuildSphere!";
 const message = "Hi Let's go Team Devign 🚀";
 
-const data = JSON.stringify({ 
+const data = JSON.stringify({
   user_id: 1,
   title: title,
   message: message

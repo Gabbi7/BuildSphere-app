@@ -48,6 +48,9 @@ async function ensureNotificationTables() {
       type TEXT,
       data JSONB,
       is_read BOOLEAN DEFAULT FALSE,
+      date TEXT,
+      time TEXT,
+      reference_url TEXT,
       created_at TIMESTAMPTZ DEFAULT NOW()
     )
   `);
@@ -55,13 +58,43 @@ async function ensureNotificationTables() {
   notificationSchemaReady = true;
 }
 
+/**
+ * Build a reference_url from notification data for mobile deep-linking.
+ */
+function buildReferenceUrl(data) {
+  if (!data) return null;
+  if (data.task_id) return `/tasks/${data.task_id}`;
+  if (data.project_id && data.screen === 'Inventory') return `/inventory/${data.project_id}`;
+  if (data.project_id) return `/projects/${data.project_id}`;
+  return null;
+}
+
+/**
+ * Format date/time strings in Manila timezone for legacy mobile UI support.
+ */
+function formatLegacyTimestamps() {
+  const now = new Date();
+  // Format in Asia/Manila timezone
+  const manilaDate = now.toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' }); // YYYY-MM-DD
+  const manilaTime = now.toLocaleTimeString('en-US', {
+    timeZone: 'Asia/Manila',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true,
+  }); // HH:mm AM/PM
+  return { date: manilaDate, time: manilaTime };
+}
+
 async function saveNotificationHistory(userId, title, body, type, data) {
   try {
-    // Matching actual schema: user_id, title, message, type, is_read, created_at
+    const referenceUrl = buildReferenceUrl(data);
+    const { date, time } = formatLegacyTimestamps();
+
+    // Matching actual schema: user_id, title, message, type, is_read, date, time, reference_url, created_at
     await pool.query(
-      `INSERT INTO notifications (user_id, title, message, type, is_read, created_at)
-       VALUES ($1, $2, $3, $4, false, NOW())`,
-      [userId, title, body, type || null]
+      `INSERT INTO notifications (user_id, title, message, type, is_read, date, time, reference_url, created_at)
+       VALUES ($1, $2, $3, $4, false, $5, $6, $7, NOW())`,
+      [userId, title, body, type || null, date, time, referenceUrl]
     );
   } catch (err) {
     console.error('Failed to save notification history:', err.message);

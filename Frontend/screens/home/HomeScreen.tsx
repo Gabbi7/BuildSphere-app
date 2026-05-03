@@ -25,6 +25,7 @@ import TaskDetailScreen from './TaskDetailScreen';
 import InventoryScreen from './InventoryScreen';
 import EditProjectScreen from './EditProjectScreen';
 import { API_URL } from '../../lib/api';
+import { supabase } from '../../lib/supabase';
 import { UserInfo } from '../../App';
 import { getPermissions } from '../../constants/roles';
 
@@ -81,6 +82,7 @@ export default function HomeScreen({
   const [prefilledTask, setPrefilledTask] = useState<any>(null);
   const [showEditProject, setShowEditProject] = useState(false);
   const [showColorPicker, setShowColorPicker] = useState(false);
+  const [projectsError, setProjectsError] = useState<string | null>(null);
 
   // RBAC: Filtered FAB Actions 
   const perms = useMemo(() => getPermissions(user.role), [user.role]);
@@ -177,8 +179,28 @@ export default function HomeScreen({
 
   useEffect(() => {
     fetchNotificationCount();
-    const interval = setInterval(fetchNotificationCount, 30000); // Polling every 30s
-    return () => clearInterval(interval);
+
+    // Phase 2: Realtime subscription for notification badge
+    const channel = supabase
+      .channel(`badge-notifications-${user.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'notifications',
+          filter: `user_id=eq.${user.id}`,
+        },
+        () => {
+          // Increment unread count on new notification
+          setUnreadCount((prev) => prev + 1);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [user.id]);
 
   // Deep-link: Notification → Task Detail
@@ -207,6 +229,7 @@ export default function HomeScreen({
 
   const fetchProjects = () => {
     setLoadingProjects(true);
+    setProjectsError(null);
     fetch(`${API_URL}/projects`)
       .then((res) => res.json())
       .then((data) => {
@@ -233,12 +256,13 @@ export default function HomeScreen({
 
           return p;
         });
-        console.log('Projects loaded with colors:', mappedData.map(p => p.color));
+        console.log('Projects loaded with colors:', mappedData.map((p: any) => p.color));
         setProjects(mappedData);
         setLoadingProjects(false);
       })
       .catch((err) => {
         console.error('Dashboard Projects Fetch Error:', err);
+        setProjectsError('Could not load projects. Pull to refresh or tap retry.');
         setLoadingProjects(false);
       });
   };
@@ -287,6 +311,7 @@ export default function HomeScreen({
               <ProjectDetailScreen
                 projectId={selectedProjectId}
                 userRole={user.role}
+                userId={user.id}
                 onBack={() => {
                   setSelectedProjectId(null);
                   fetchProjects();
@@ -297,7 +322,12 @@ export default function HomeScreen({
                 contentContainerStyle={{ paddingBottom: 160 }}
                 className="px-5 pt-4"
                 refreshControl={
-                  <RefreshControl refreshing={loadingProjects} onRefresh={fetchProjects} color="#7370FF" />
+                  <RefreshControl
+                    refreshing={loadingProjects}
+                    onRefresh={fetchProjects}
+                    colors={['#7370FF']}
+                    tintColor="#7370FF"
+                  />
                 }>
                 <View className="flex-row items-center justify-between">
                   <Text className="mb-1 text-[22px] font-bold text-[#6C63FF]">Home</Text>
@@ -322,8 +352,21 @@ export default function HomeScreen({
                 <Text className="mb-4 text-lg font-bold text-[#1E1E1E]">Projects</Text>
                 {loadingProjects ? (
                   <ActivityIndicator color="#7370FF" />
+                ) : projectsError ? (
+                  <View className="mt-6 items-center rounded-2xl border border-[#F2E5E5] bg-[#FFF5F5] p-5">
+                    <Ionicons name="alert-circle-outline" size={28} color="#FF6B6B" />
+                    <Text className="mt-2 text-center text-[13px] text-[#8A5050]">{projectsError}</Text>
+                    <TouchableOpacity
+                      onPress={fetchProjects}
+                      className="mt-3 rounded-xl bg-[#7370FF] px-4 py-2">
+                      <Text className="text-[12px] font-semibold text-white">Retry</Text>
+                    </TouchableOpacity>
+                  </View>
                 ) : projects.length === 0 ? (
-                  <Text className="mt-4 text-center text-[#A3A3A3]">No projects found.</Text>
+                  <View className="mt-8 items-center">
+                    <Ionicons name="layers-outline" size={36} color="#C5C5C5" />
+                    <Text className="mt-2 text-center text-[#A3A3A3]">No projects found.</Text>
+                  </View>
                 ) : (
                   projects.map((p: any) => (
                     <TouchableOpacity key={p.id} onPress={() => setSelectedProjectId(p.id)}>
@@ -334,7 +377,7 @@ export default function HomeScreen({
                         image={p.image}
                         progress={p.progress}
                         daysLeft={p.daysLeft}
-                        onAction={() => handleProjectAction(p)}
+                        onAction={perms.canCreateTasks ? () => handleProjectAction(p) : undefined}
                       />
                     </TouchableOpacity>
                   ))

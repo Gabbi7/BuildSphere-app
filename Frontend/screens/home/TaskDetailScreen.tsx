@@ -125,9 +125,9 @@ export default function TaskDetailScreen({
   };
 
   const FAB_ACTIONS = [
-    { label: 'Add new task', icon: 'add-circle-outline', key: 'task' },
-    { label: 'Update inventory', icon: 'cube-outline', key: 'inventory' },
-    { label: 'Upload Site Progress', icon: 'cloud-upload-outline', key: 'site' },
+    ...(perms.canCreateTasks ? [{ label: 'Add new task', icon: 'add-circle-outline', key: 'task' }] : []),
+    ...(perms.canEditInventory ? [{ label: 'Update inventory', icon: 'cube-outline', key: 'inventory' }] : []),
+    ...(perms.canSubmitSiteUpdates ? [{ label: 'Upload Site Progress', icon: 'cloud-upload-outline', key: 'site' }] : []),
   ];
 
   return (
@@ -367,23 +367,29 @@ export default function TaskDetailScreen({
           {/* Comments Section */}
           <View className="mb-10 rounded-[24px] border border-[#EDECFF] bg-[#F6F6FF] p-6">
             <Text className="mb-6 text-[18px] font-bold text-[#1E1E1E]">Comments</Text>
-
-            {comments.map((comment, index) => (
-              <View
-                key={comment.id}
-                className={`flex-row items-center ${index !== comments.length - 1 ? 'mb-6' : ''}`}>
+            {comments.length === 0 ? (
+              <View className="items-center rounded-xl border border-dashed border-[#D7D4FF] bg-white p-4">
+                <Ionicons name="chatbox-ellipses-outline" size={24} color="#B5B3DD" />
+                <Text className="mt-2 text-[12px] text-[#8A88AE]">No comments yet.</Text>
+              </View>
+            ) : (
+              comments.map((comment, index) => (
                 <View
-                  className="mr-4 h-10 w-10 items-center justify-center rounded-full"
-                  style={{ backgroundColor: comment.avatarBg }}>
-                  <Text className="text-[12px] font-bold" style={{ color: comment.avatarText }}>
-                    {comment.initials}
+                  key={comment.id}
+                  className={`flex-row items-center ${index !== comments.length - 1 ? 'mb-6' : ''}`}>
+                  <View
+                    className="mr-4 h-10 w-10 items-center justify-center rounded-full"
+                    style={{ backgroundColor: comment.avatarBg }}>
+                    <Text className="text-[12px] font-bold" style={{ color: comment.avatarText }}>
+                      {comment.initials}
+                    </Text>
+                  </View>
+                  <Text className="flex-1 text-[15px] font-medium text-[#1E1E1E]">
+                    {comment.text}
                   </Text>
                 </View>
-                <Text className="flex-1 text-[15px] font-medium text-[#1E1E1E]">
-                  {comment.text}
-                </Text>
-              </View>
-            ))}
+              ))
+            )}
           </View>
         </ScrollView>
 
@@ -474,37 +480,39 @@ export default function TaskDetailScreen({
         )}
 
         {/* Floating Action Button (+) */}
-        <TouchableOpacity
-          activeOpacity={0.8}
-          className="z-40"
-          style={{
-            position: 'absolute',
-            right: 20,
-            bottom: 110, // Just above the bottom nav mimic
-            backgroundColor: PRIMARY,
-            width: 56,
-            height: 56,
-            borderRadius: 28,
-            justifyContent: 'center',
-            alignItems: 'center',
-            elevation: 10,
-            shadowColor: PRIMARY,
-            shadowOffset: { width: 0, height: 9 },
-            shadowOpacity: 0.4,
-            shadowRadius: 8,
-          }}
-          onPress={toggleFab}>
-          <Animated.View style={{
-            transform: [{
-              rotate: fabAnim.interpolate({
-                inputRange: [0, 1],
-                outputRange: ['0deg', '45deg']
-              })
-            }]
-          }}>
-            <Ionicons name="add" size={28} color="white" />
-          </Animated.View>
-        </TouchableOpacity>
+        {FAB_ACTIONS.length > 0 && (
+          <TouchableOpacity
+            activeOpacity={0.8}
+            className="z-40"
+            style={{
+              position: 'absolute',
+              right: 20,
+              bottom: 110, // Just above the bottom nav mimic
+              backgroundColor: PRIMARY,
+              width: 56,
+              height: 56,
+              borderRadius: 28,
+              justifyContent: 'center',
+              alignItems: 'center',
+              elevation: 10,
+              shadowColor: PRIMARY,
+              shadowOffset: { width: 0, height: 9 },
+              shadowOpacity: 0.4,
+              shadowRadius: 8,
+            }}
+            onPress={toggleFab}>
+            <Animated.View style={{
+              transform: [{
+                rotate: fabAnim.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: ['0deg', '45deg']
+                })
+              }]
+            }}>
+              <Ionicons name="add" size={28} color="white" />
+            </Animated.View>
+          </TouchableOpacity>
+        )}
 
       </View>
 
@@ -543,7 +551,18 @@ export default function TaskDetailScreen({
 
             <TouchableOpacity
               onPress={() => {
-                Alert.alert("Delete History", "Are you sure you want to remove this progress log?");
+                Alert.alert(
+                  'Delete History',
+                  'Are you sure you want to remove this progress log?',
+                  [
+                    { text: 'Cancel', style: 'cancel' },
+                    {
+                      text: 'Delete',
+                      style: 'destructive',
+                      onPress: () => Alert.alert('Not available', 'Deleting progress history is not supported yet.'),
+                    },
+                  ]
+                );
                 setShowActionMenu(false);
               }}
               className="flex-row items-center py-4">
@@ -581,8 +600,10 @@ export default function TaskDetailScreen({
                       headers: { 'Content-Type': 'application/json' },
                       body: JSON.stringify({ shift: item.label }),
                     });
+                    Alert.alert('Updated', `Shift changed to ${item.label}.`);
                   } catch (err) {
                     console.error('Failed to update shift:', err);
+                    Alert.alert('Update Failed', 'Could not update shift. Please try again.');
                   }
                 }}
                 className={`mb-3 flex-row items-center rounded-xl border p-4 ${currentShift === item.label
@@ -641,6 +662,7 @@ export default function TaskDetailScreen({
                       const errorData = await res.json();
                       throw new Error(errorData.error || 'Failed to update status');
                     }
+                    Alert.alert('Updated', `Status changed to ${item.label}.`);
                   } catch (err: any) {
                     console.error('Failed to update status:', err);
                     setCurrentStatus(oldStatus);

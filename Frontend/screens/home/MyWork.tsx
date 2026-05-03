@@ -47,6 +47,7 @@ export default function MyWork({ userId, onTaskSelect }: MyWorkProps) {
   const [showProjectModal, setShowProjectModal] = useState(false);
   const [sortBy, setSortBy] = useState<'due_date_asc' | 'due_date_desc' | 'priority'>('due_date_asc');
   const [filterBy, setFilterBy] = useState<'all' | 'high_priority' | 'medium_priority' | 'low_priority'>('all');
+  const [error, setError] = useState<string | null>(null);
 
   const TABS: { label: Tab; color: string }[] = [
     { label: 'To Do', color: '#FF6B6B' },
@@ -55,54 +56,25 @@ export default function MyWork({ userId, onTaskSelect }: MyWorkProps) {
     { label: 'Completed', color: '#4CAF50' },
   ];
 
-  useEffect(() => {
+  const loadTasks = () => {
+    setLoading(true);
+    setError(null);
     fetch(`${API_URL}/tasks?userId=${userId}`)
       .then((res) => res.json())
       .then((data) => {
         setTasks(data);
         setLoading(false);
       })
-      .catch(() => {
-        // Dummy Data matching screenshot feel
-        setTasks([
-          {
-            id: 1,
-            title: 'Submit shop drawings for approval',
-            project: 'Arane Corp',
-            phase: 'Preliminary',
-            milestone: 'Shop Drawings',
-            status: 'in-progress',
-            priority: 'high',
-            due_date: '02/18/2026',
-            start_date: '02/11/2026',
-          },
-          {
-            id: 2,
-            title: 'Order Concrete Mix',
-            project: 'DMCI Homes',
-            status: 'pending',
-            priority: 'medium',
-            due_date: '02/20/2026',
-          },
-          {
-            id: 3,
-            title: 'Site Inspection',
-            project: 'Sunset Apartments',
-            status: 'to-review',
-            priority: 'high',
-            due_date: '02/21/2026',
-          },
-          {
-            id: 4,
-            title: 'Foundation Pouring',
-            project: 'City Tower A',
-            status: 'completed',
-            priority: 'high',
-            due_date: '02/10/2026',
-          },
-        ]);
+      .catch((err) => {
+        console.error('Tasks fetch failed:', err);
+        setError('Could not load tasks.');
+        setTasks([]);
         setLoading(false);
       });
+  };
+
+  useEffect(() => {
+    loadTasks();
   }, [userId]);
 
   // Unique projects for filtering
@@ -262,6 +234,14 @@ export default function MyWork({ userId, onTaskSelect }: MyWorkProps) {
         contentContainerStyle={{ paddingBottom: 120 }}>
         {loading ? (
           <ActivityIndicator color="#7370FF" style={{ marginTop: 40 }} />
+        ) : error ? (
+          <View className="mt-20 items-center justify-center">
+            <Ionicons name="alert-circle-outline" size={40} color="#FF6B6B" />
+            <Text className="mt-3 text-[13px] text-[#A06565]">{error}</Text>
+            <TouchableOpacity onPress={loadTasks} className="mt-3 rounded-lg bg-[#7370FF] px-4 py-2">
+              <Text className="text-[12px] font-semibold text-white">Retry</Text>
+            </TouchableOpacity>
+          </View>
         ) : filteredTasks.length === 0 ? (
           <View className="mt-20 items-center justify-center">
             <Ionicons name="document-text-outline" size={48} color="#E0E0E0" />

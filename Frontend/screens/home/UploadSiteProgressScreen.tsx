@@ -67,6 +67,7 @@ export default function UploadSiteProgressScreen({ visible, user, onClose, proje
   const [saving, setSaving] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
   const [loadingTasks, setLoadingTasks] = useState(false);
+  const [tasksError, setTasksError] = useState<string | null>(null);
   const [isTaskModalVisible, setIsTaskModalVisible] = useState(false);
   const [isShiftModalVisible, setIsShiftModalVisible] = useState(false);
   const [shift, setShift] = useState('Morning');
@@ -105,8 +106,9 @@ export default function UploadSiteProgressScreen({ visible, user, onClose, proje
     setDetections([]);
   };
 
-  React.useEffect(() => {
+  const loadUserTasks = () => {
     setLoadingTasks(true);
+    setTasksError(null);
     fetch(`${API_URL}/tasks?userId=${user.id}`)
       .then((res) => res.json())
       .then((data) => {
@@ -117,13 +119,39 @@ export default function UploadSiteProgressScreen({ visible, user, onClose, proje
           setProjectId(data[0].project_id);
         }
       })
-      .catch((err) => console.error('Error fetching user tasks:', err))
+      .catch((err) => {
+        console.error('Error fetching user tasks:', err);
+        setTasksError('Could not load assigned tasks.');
+      })
       .finally(() => setLoadingTasks(false));
+  };
+
+  React.useEffect(() => {
+    loadUserTasks();
   }, [user.id, initialTask]);
 
   const handleClose = () => {
-    reset();
-    onClose();
+    const hasDraft =
+      selectedPhotos.length > 0 ||
+      !!notes.trim() ||
+      verifiedPanelCount > 0 ||
+      step > 1;
+    if (!hasDraft) {
+      reset();
+      onClose();
+      return;
+    }
+    Alert.alert('Discard progress?', 'Your current upload draft will be lost.', [
+      { text: 'Keep editing', style: 'cancel' },
+      {
+        text: 'Discard',
+        style: 'destructive',
+        onPress: () => {
+          reset();
+          onClose();
+        },
+      },
+    ]);
   };
   const pickFromLibrary = async (multiple = true) => {
     const remainingLimit = 5 - selectedPhotos.length;
@@ -897,6 +925,14 @@ export default function UploadSiteProgressScreen({ visible, user, onClose, proje
 
             {loadingTasks ? (
               <ActivityIndicator color={PRIMARY} />
+            ) : tasksError ? (
+              <View className="items-center py-10">
+                <Ionicons name="alert-circle-outline" size={28} color="#FF6B6B" />
+                <Text className="mt-2 text-center text-[13px] text-[#A06565]">{tasksError}</Text>
+                <TouchableOpacity onPress={loadUserTasks} className="mt-3 rounded-lg bg-[#7370FF] px-4 py-2">
+                  <Text className="text-[12px] font-semibold text-white">Retry</Text>
+                </TouchableOpacity>
+              </View>
             ) : userTasks.length === 0 ? (
               <Text className="text-center text-gray-500 py-10">No tasks assigned to you yet.</Text>
             ) : (

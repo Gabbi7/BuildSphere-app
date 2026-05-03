@@ -32,6 +32,7 @@ interface Project {
 
 interface Props {
   projectId: number;
+  userId: number;
   onBack: () => void;
   userRole?: UserRole;
 }
@@ -70,15 +71,18 @@ function daysLeft(end?: string) {
   return diff > 0 ? diff : 0;
 }
 
-export default function ProjectDetailScreen({ projectId, onBack, userRole }: Props) {
+export default function ProjectDetailScreen({ projectId, userId, onBack, userRole }: Props) {
   const [project, setProject] = useState<Project | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [activeSection, setActiveSection] = useState<
     'detail' | 'inventory' | 'siteUpdates' | 'tasks'
   >('detail');
   const [showSiteUpdates, setShowSiteUpdates] = useState(false);
 
-  useEffect(() => {
+  const loadProject = () => {
+    setLoading(true);
+    setError(null);
     fetch(`${API_URL}/projects/${projectId}`)
       .then((r) => r.json())
       .then((d) => {
@@ -87,18 +91,34 @@ export default function ProjectDetailScreen({ projectId, onBack, userRole }: Pro
       })
       .catch((err) => {
         console.error('ProjectDetail Fetch Error:', err);
+        setError('Unable to load project details.');
         setLoading(false);
       });
+  };
+
+  useEffect(() => {
+    loadProject();
   }, [projectId]);
 
   if (activeSection === 'inventory' && project) {
-    return <InventoryScreen projectId={project.id} onBack={() => setActiveSection('detail')} userRole={userRole} />;
+    return <InventoryScreen projectId={project.id} userId={userId} onBack={() => setActiveSection('detail')} userRole={userRole} />;
   }
 
-  if (loading || !project) {
+  if (loading) {
     return (
       <View className="flex-1 items-center justify-center bg-white">
         <ActivityIndicator color="#7370FF" size="large" />
+      </View>
+    );
+  }
+  if (error || !project) {
+    return (
+      <View className="flex-1 items-center justify-center bg-white px-8">
+        <Ionicons name="alert-circle-outline" size={34} color="#FF6B6B" />
+        <Text className="mt-2 text-center text-[#A06565]">{error || 'Project not found.'}</Text>
+        <TouchableOpacity onPress={loadProject} className="mt-4 rounded-xl bg-[#7370FF] px-4 py-2">
+          <Text className="font-semibold text-white">Retry</Text>
+        </TouchableOpacity>
       </View>
     );
   }
@@ -117,7 +137,7 @@ export default function ProjectDetailScreen({ projectId, onBack, userRole }: Pro
           <TouchableOpacity onPress={onBack} className="mr-3">
             <Ionicons name="chevron-back" size={32} color="#1E1E1E" />
           </TouchableOpacity>
-          <Text className="text-[32px] font-bold text-[#7370FF]">Project Name</Text>
+          <Text className="text-[32px] font-bold text-[#7370FF]" numberOfLines={1}>{project.name}</Text>
         </View>
 
         {/* Main Info Card */}
@@ -126,9 +146,9 @@ export default function ProjectDetailScreen({ projectId, onBack, userRole }: Pro
           style={{ shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 15, elevation: 3 }}>
           <View className="mb-3 flex-row items-center justify-between">
             <Text className="flex-1 text-[20px] font-bold text-[#1E1E1E]">{project.name}</Text>
-            <View className="rounded-full px-5 py-2" style={{ backgroundColor: '#FF7D7D' }}>
+            <View className="rounded-full px-5 py-2" style={{ backgroundColor: badge.bg }}>
               <Text className="text-[11px] font-bold uppercase tracking-wider text-white">
-                {project.status}
+                {badge.label}
               </Text>
             </View>
           </View>

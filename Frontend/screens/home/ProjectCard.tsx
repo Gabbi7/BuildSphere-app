@@ -43,12 +43,14 @@ export default function ProjectCard({
           />
         )}
         {/* 3-dot menu */}
-        <TouchableOpacity 
-          className="absolute right-3 top-3 h-7 w-7 items-center justify-center rounded-full bg-black/10" 
-          onPress={onAction}
-        >
-          <Ionicons name="ellipsis-vertical" size={15} color={image ? 'white' : '#666'} />
-        </TouchableOpacity>
+        {onAction ? (
+          <TouchableOpacity 
+            className="absolute right-3 top-3 h-7 w-7 items-center justify-center rounded-full bg-black/10" 
+            onPress={onAction}
+          >
+            <Ionicons name="ellipsis-vertical" size={15} color={image ? 'white' : '#666'} />
+          </TouchableOpacity>
+        ) : null}
       </View>
 
       {/* Card Content */}

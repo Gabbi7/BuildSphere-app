@@ -1,6 +1,11 @@
 const express = require('express');
 const router = express.Router();
 const pool = require('../db');
+const { sendPushNotificationToUser } = require('../services/pushNotificationService');
+
+// ── Phase 2 Constants ───────────────────────────────────────────────────
+const VALID_ACTION_TYPES = ['RECEIVING', 'CONSUMPTION', 'SPOILAGE', 'ADJUSTMENT'];
+
 let inventorySchemaReady = false;
 
 async function ensureInventoryColumns() {
@@ -56,6 +61,7 @@ router.get('/logs', async (req, res) => {
         l.action_type,
         l.quantity,
         l.notes,
+        l.reference_task_id,
         l.created_at,
         i.item_name,
         i.category,
@@ -64,11 +70,13 @@ router.get('/logs', async (req, res) => {
         p.project_name,
         p.address AS location,
         u.id AS actor_user_id,
-        TRIM(COALESCE(u.first_name, '') || ' ' || COALESCE(u.last_name, '')) AS actor_name
+        TRIM(COALESCE(u.first_name, '') || ' ' || COALESCE(u.last_name, '')) AS actor_name,
+        t.title AS task_title
       FROM project_inventory_logs l
       JOIN project_inventory_items i ON i.id = l.item_id
       LEFT JOIN projects p ON p.id = i.project_id
       LEFT JOIN users u ON u.id = l.created_by
+      LEFT JOIN tasks t ON t.id = l.reference_task_id
       ${where}
       ORDER BY l.created_at DESC`,
       params
@@ -81,29 +89,110 @@ router.get('/logs', async (req, res) => {
   }
 });
 
-// POST /inventory/logs
-router.post('/logs', async (req, res) => {
-  const { itemId, actionType, quantity, notes, createdBy } = req.body;
+// ═════════════════════════════════════════════════════════════════════════
+// POST /inventory/:itemId/transaction  — Phase 2 Ledger Transaction
+// ═════════════════════════════════════════════════════════════════════════
+// This is the ONLY way to modify stock levels.
+// The DB trigger `trg_update_inventory_stock` handles current_stock updates.
+// ═════════════════════════════════════════════════════════════════════════
+router.post('/:itemId/transaction', async (req, res) => {
+  const { itemId } = req.params;
+  const { action_type, quantity, reference_task_id, notes, created_by } = req.body;
 
-  if (!itemId || !actionType || quantity === undefined || quantity === null || !createdBy) {
-    return res.status(400).json({ error: 'itemId, actionType, quantity, and createdBy are required.' });
+  // ── Validate action_type ──
+  if (!action_type || !VALID_ACTION_TYPES.includes(action_type)) {
+    return res.status(400).json({
+      error: `Invalid action_type. Must be one of: ${VALID_ACTION_TYPES.join(', ')}`,
+    });
+  }
+
+  // ── Validate quantity ──
+  const numQty = Number(quantity);
+  if (!numQty || numQty <= 0) {
+    return res.status(400).json({ error: 'quantity must be a positive number.' });
+  }
+
+  // ── Enforce task-linking for CONSUMPTION ──
+  if (action_type === 'CONSUMPTION' && !reference_task_id) {
+    return res.status(400).json({
+      error: 'reference_task_id is REQUIRED when action_type is CONSUMPTION.',
+    });
   }
 
   try {
-    const result = await pool.query(
-      `INSERT INTO project_inventory_logs (item_id, action_type, quantity, notes, created_by, created_at)
-       VALUES ($1, $2, $3, $4, $5, NOW())
-       RETURNING *`,
-      [itemId, actionType, quantity, notes || null, createdBy]
+    // Verify item exists
+    const itemCheck = await pool.query(
+      'SELECT id, item_name, project_id, current_stock, critical_level FROM project_inventory_items WHERE id = $1',
+      [itemId]
     );
-    res.status(201).json(result.rows[0]);
+    if (itemCheck.rows.length === 0) {
+      return res.status(404).json({ error: 'Inventory item not found.' });
+    }
+    const item = itemCheck.rows[0];
+
+    // Insert the transaction log — the DB trigger handles stock update
+    const logResult = await pool.query(
+      `INSERT INTO project_inventory_logs (item_id, action_type, quantity, reference_task_id, notes, created_by, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, NOW())
+       RETURNING *`,
+      [itemId, action_type, numQty, reference_task_id || null, notes || null, created_by || 1]
+    );
+
+    // Refetch updated item to get the new stock level (updated by trigger)
+    const updatedItem = await pool.query(
+      'SELECT id, item_name, current_stock AS quantity, critical_level, unit FROM project_inventory_items WHERE id = $1',
+      [itemId]
+    );
+    const refreshedItem = updatedItem.rows[0];
+
+    // ── Low Stock Alert ──
+    if (refreshedItem && Number(refreshedItem.quantity) <= Number(refreshedItem.critical_level)) {
+      const projectRes = await pool.query(
+        'SELECT project_in_charge_id, project_name FROM projects WHERE id = $1',
+        [item.project_id]
+      );
+      if (projectRes.rows.length > 0) {
+        const proj = projectRes.rows[0];
+        if (proj.project_in_charge_id) {
+          // Insert WARNING notification
+          await pool.query(
+            `INSERT INTO notifications (type, title, message, user_id, reference_url)
+             VALUES ($1, $2, $3, $4, $5)`,
+            [
+              'WARNING',
+              'Low Stock Alert',
+              `Item '${item.item_name}' in ${proj.project_name || 'Project'} is low (${refreshedItem.quantity} left).`,
+              proj.project_in_charge_id,
+              `/inventory/${item.project_id}`,
+            ]
+          );
+
+          await sendPushNotificationToUser(
+            proj.project_in_charge_id,
+            'Low Stock Alert ⚠️',
+            `Item '${item.item_name}' is at ${refreshedItem.quantity} ${refreshedItem.unit || 'pcs'} (critical: ${refreshedItem.critical_level}).`,
+            {
+              type: 'low_stock_warning',
+              screen: 'Inventory',
+              project_id: String(item.project_id),
+              item_id: String(itemId),
+            }
+          );
+        }
+      }
+    }
+
+    res.status(201).json({
+      transaction: logResult.rows[0],
+      item: refreshedItem,
+    });
   } catch (err) {
-    console.error('Create log error:', err);
-    res.status(500).json({ error: 'Failed to create inventory log.' });
+    console.error('Transaction error:', err);
+    res.status(500).json({ error: 'Failed to process inventory transaction.', detail: err.message });
   }
 });
 
-// POST /inventory
+// POST /inventory  — Add new inventory item (unchanged, still allowed)
 router.post('/', async (req, res) => {
   const { projectId, itemName, category, quantity, criticalLevel, price, unit, createdBy } = req.body;
   
@@ -121,10 +210,11 @@ router.post('/', async (req, res) => {
     );
     const item = result.rows[0];
 
+    // Log the initial stock as a RECEIVING transaction
     await pool.query(
       `INSERT INTO project_inventory_logs (item_id, action_type, quantity, notes, created_by, created_at)
        VALUES ($1, $2, $3, $4, $5, NOW())`,
-      [item.id, 'add_item', numQty, 'Item added via mobile inventory.', createdBy || 1]
+      [item.id, 'RECEIVING', numQty, 'Initial stock — item added via mobile inventory.', createdBy || 1]
     );
     res.json(item);
   } catch (err) {
@@ -133,44 +223,40 @@ router.post('/', async (req, res) => {
   }
 });
 
-// PATCH /inventory/:id
+// PATCH /inventory/:id  — Update item metadata ONLY (name, category, etc.)
+// NOTE: Stock quantity updates are NO LONGER allowed here. Use POST /:itemId/transaction.
 router.patch('/:id', async (req, res) => {
-  const { itemName, quantity, updatedBy, notes } = req.body;
-  const numQty = parseFloat(String(quantity).replace(/[^0-9.]/g, '')) || 0;
+  const { itemName, category, criticalLevel, price, unit, updatedBy } = req.body;
   try {
     await ensureInventoryColumns();
-    const result = await pool.query(
-      'UPDATE project_inventory_items SET item_name=$1, current_stock=$2, updated_at=NOW() WHERE id=$3 RETURNING *, current_stock AS quantity',
-      [itemName, numQty, req.params.id]
-    );
-    const item = result.rows[0];
 
-    await pool.query(
-      `INSERT INTO project_inventory_logs (item_id, action_type, quantity, notes, created_by, created_at)
-       VALUES ($1, $2, $3, $4, $5, NOW())`,
-      [item.id, 'update_stock', numQty, notes || 'Stock updated via mobile inventory.', updatedBy || 1]
-    );
+    const fields = [];
+    const values = [];
+    let idx = 1;
 
-    // Notification Trigger: Low Stock
-    if (numQty <= item.critical_level) {
-      // Find project PIC
-      const projectRes = await pool.query('SELECT project_in_charge_id, name FROM projects WHERE id = $1', [item.project_id]);
-      if (projectRes.rows.length > 0) {
-        const proj = projectRes.rows[0];
-        await pool.query(
-          'INSERT INTO notifications (type, title, message, time, user_id) VALUES ($1, $2, $3, $4, $5)',
-          [
-            'alert',
-            'Low Stock Alert',
-            `Item '${item.item_name}' in ${proj.name || 'Project'} is low (${numQty} left).`,
-            'Just now',
-            proj.project_in_charge_id,
-          ]
-        );
-      }
+    if (itemName !== undefined) { fields.push(`item_name=$${idx++}`); values.push(itemName); }
+    if (category !== undefined) { fields.push(`category=$${idx++}`); values.push(category); }
+    if (criticalLevel !== undefined) { fields.push(`critical_level=$${idx++}`); values.push(parseFloat(String(criticalLevel).replace(/[^0-9.]/g, '')) || 0); }
+    if (price !== undefined) { fields.push(`price=$${idx++}`); values.push(parseFloat(String(price).replace(/[^0-9.]/g, '')) || 0); }
+    if (unit !== undefined) { fields.push(`unit=$${idx++}`); values.push(unit); }
+
+    if (fields.length === 0) {
+      return res.status(400).json({ error: 'No updatable fields provided. Use POST /:itemId/transaction for stock changes.' });
     }
 
-    res.json(item);
+    fields.push('updated_at=NOW()');
+    values.push(req.params.id);
+
+    const result = await pool.query(
+      `UPDATE project_inventory_items SET ${fields.join(', ')} WHERE id=$${idx} RETURNING *, current_stock AS quantity`,
+      values
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Item not found.' });
+    }
+
+    res.json(result.rows[0]);
   } catch (err) {
     console.error('Fetch PATCH error:', err);
     res.status(500).json({ error: 'Failed to update item.' });
@@ -188,7 +274,7 @@ router.delete('/:id', async (req, res) => {
       await pool.query(
         `INSERT INTO project_inventory_logs (item_id, action_type, quantity, notes, created_by, created_at)
          VALUES ($1, $2, $3, $4, $5, NOW())`,
-        [item.id, 'delete_item', item.current_stock || 0, 'Item deleted from inventory.', deletedBy || 1]
+        [item.id, 'ADJUSTMENT', item.current_stock || 0, 'Item deleted from inventory.', deletedBy || 1]
       );
     }
 

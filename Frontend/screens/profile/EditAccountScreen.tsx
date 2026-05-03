@@ -26,6 +26,15 @@ export default function EditAccountScreen({ user, onBack, onSaved }: EditAccount
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const hasChanges = email !== user.email || !!password || !!confirmPassword;
+
+  const handleBackPress = () => {
+    if (!hasChanges) return onBack();
+    Alert.alert('Discard changes?', 'Unsaved account changes will be lost.', [
+      { text: 'Keep editing', style: 'cancel' },
+      { text: 'Discard', style: 'destructive', onPress: onBack },
+    ]);
+  };
 
   const handleSave = async () => {
     if (!email.trim()) {
@@ -84,7 +93,7 @@ export default function EditAccountScreen({ user, onBack, onSaved }: EditAccount
 
       {/* Header */}
       <View className="flex-row items-center justify-between px-5 pb-4 pt-14">
-        <TouchableOpacity onPress={onBack}>
+        <TouchableOpacity onPress={handleBackPress}>
           <Ionicons name="chevron-back" size={26} color="#1E1E1E" />
         </TouchableOpacity>
         <Text className="text-[17px] font-bold text-[#1E1E1E]">Edit Account</Text>

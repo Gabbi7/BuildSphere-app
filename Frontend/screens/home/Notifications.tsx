@@ -1,7 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, ActivityIndicator, RefreshControl } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, ActivityIndicator, RefreshControl, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { API_URL } from '../../lib/api';
+import { supabase } from '../../lib/supabase';
+import { LEGACY_NOTIFICATION_TYPE_MAP } from '../../constants/constants';
 
 interface NotificationMetadata {
   task_id?: number;
@@ -31,9 +33,11 @@ export default function Notifications({ userId, onNavigateToTask, onNavigateToIn
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [filter, setFilter] = useState<'all' | 'unread'>('all');
+  const [error, setError] = useState<string | null>(null);
 
   const fetchNotifications = useCallback(async () => {
     try {
+      setError(null);
       const res = await fetch(`${API_URL}/notifications?userId=${userId}`);
       const data = await res.json();
       if (Array.isArray(data)) {
@@ -44,13 +48,51 @@ export default function Notifications({ userId, onNavigateToTask, onNavigateToIn
       }
     } catch (err) {
       console.error('Failed to fetch notifications:', err);
+      setError('Unable to load notifications.');
     }
   }, [userId]);
 
   useEffect(() => {
     setLoading(true);
     fetchNotifications().finally(() => setLoading(false));
-  }, [fetchNotifications]);
+
+    // ── Phase 2: Supabase Realtime Subscription ──
+    const channel = supabase
+      .channel(`user-notifications-${userId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'notifications',
+          filter: `user_id=eq.${userId}`,
+        },
+        (payload) => {
+          const newNotif = payload.new as any;
+          if (newNotif) {
+            setNotifications((prev) => [
+              {
+                id: newNotif.id,
+                type: newNotif.type || 'INFO',
+                title: newNotif.title || '',
+                message: newNotif.message || newNotif.body || '',
+                time: newNotif.time || 'Just now',
+                is_read: newNotif.is_read || false,
+                metadata: newNotif.data || null,
+                reference_url: newNotif.reference_url || null,
+                created_at: newNotif.created_at,
+              } as any,
+              ...prev,
+            ]);
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [fetchNotifications, userId]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -59,7 +101,15 @@ export default function Notifications({ userId, onNavigateToTask, onNavigateToIn
   }, [fetchNotifications]);
 
   const getIcon = (type: string) => {
-    switch (type) {
+    const normalized = LEGACY_NOTIFICATION_TYPE_MAP[type] || type;
+    switch (normalized) {
+      case 'WARNING':
+        return 'warning-outline';
+      case 'SUCCESS':
+        return 'checkmark-circle-outline';
+      case 'INFO':
+        return 'information-circle-outline';
+      // Legacy fallbacks
       case 'alert':
         return 'stats-chart-outline';
       case 'update':
@@ -75,7 +125,15 @@ export default function Notifications({ userId, onNavigateToTask, onNavigateToIn
 
 
   const getColor = (type: string) => {
-    switch (type) {
+    const normalized = LEGACY_NOTIFICATION_TYPE_MAP[type] || type;
+    switch (normalized) {
+      case 'WARNING':
+        return '#FF9F43';
+      case 'SUCCESS':
+        return '#51CF66';
+      case 'INFO':
+        return '#4DABF7';
+      // Legacy fallbacks
       case 'alert':
         return '#FF6B6B';
       case 'update':
@@ -108,12 +166,21 @@ export default function Notifications({ userId, onNavigateToTask, onNavigateToIn
   };
 
   const deleteNotification = async (id: number) => {
-    setNotifications((prev) => prev.filter((n) => n.id !== id));
-    try {
-      await fetch(`${API_URL}/notifications/${id}`, { method: 'DELETE' });
-    } catch (err) {
-      console.error('Failed to delete notification:', err);
-    }
+    Alert.alert('Delete notification', 'Remove this notification?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => {
+          setNotifications((prev) => prev.filter((n) => n.id !== id));
+          try {
+            await fetch(`${API_URL}/notifications/${id}`, { method: 'DELETE' });
+          } catch (err) {
+            console.error('Failed to delete notification:', err);
+          }
+        },
+      },
+    ]);
   };
 
   const handleNotificationPress = (notif: Notification) => {
@@ -183,6 +250,11 @@ export default function Notifications({ userId, onNavigateToTask, onNavigateToIn
               {loading ? 'Loading...' : unreadCount > 0 ? `${unreadCount} unread` : 'All caught up!'}
             </Text>
           </View>
+          {unreadCount > 0 && (
+            <TouchableOpacity onPress={markAllRead} className="rounded-full bg-[#EAE8FF] px-3 py-1.5">
+              <Text className="text-[12px] font-semibold text-[#7370FF]">Mark all read</Text>
+            </TouchableOpacity>
+          )}
         </View>
 
 
@@ -214,6 +286,14 @@ export default function Notifications({ userId, onNavigateToTask, onNavigateToIn
 
         {loading ? (
           <ActivityIndicator color="#7370FF" size="large" className="mt-10" />
+        ) : error ? (
+          <View className="mt-20 items-center justify-center">
+            <Ionicons name="alert-circle-outline" size={40} color="#FF6B6B" />
+            <Text className="mt-3 text-[13px] text-[#A06565]">{error}</Text>
+            <TouchableOpacity onPress={fetchNotifications} className="mt-3 rounded-lg bg-[#7370FF] px-4 py-2">
+              <Text className="text-[12px] font-semibold text-white">Retry</Text>
+            </TouchableOpacity>
+          </View>
         ) : filtered.length === 0 ? (
           <View className="mt-20 items-center justify-center">
             <View className="mb-4 h-20 w-20 items-center justify-center rounded-full bg-[#F5F5F7]">

@@ -14,6 +14,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { API_URL } from '../../lib/api';
 import { getPermissions, type UserRole } from '../../constants/roles';
+import { ACTION_TYPES, ACTION_TYPE_LABELS, ACTION_TYPE_COLORS, type ActionType } from '../../constants/constants';
 
 interface InventoryItem {
   id: number;
@@ -63,6 +64,7 @@ const PREDEFINED_ITEMS: Record<string, string> = {
 };
 
 const ACTION_LABELS: Record<string, string> = {
+  ...ACTION_TYPE_LABELS,
   add_item: 'Added',
   update_stock: 'Stock Updated',
   delete_item: 'Deleted',
@@ -99,14 +101,23 @@ export default function InventoryScreen({ projectId, userId, onBack, userRole }:
   const [editItem, setEditItem] = useState<InventoryItem | null>(null);
   const [editName, setEditName] = useState('');
   const [editQty, setEditQty] = useState('');
+  // Transaction modal state
+  const [showTransaction, setShowTransaction] = useState(false);
+  const [txnItem, setTxnItem] = useState<InventoryItem | null>(null);
+  const [txnAction, setTxnAction] = useState<ActionType>('RECEIVING');
+  const [txnQty, setTxnQty] = useState('');
+  const [txnNotes, setTxnNotes] = useState('');
+  const [txnTaskId, setTxnTaskId] = useState('');
+  const [projectTasks, setProjectTasks] = useState<{id: number; title: string}[]>([]);
   const [showAddLog, setShowAddLog] = useState(false);
   const [logItemId, setLogItemId] = useState('');
-  const [logActionType, setLogActionType] = useState('correction');
+  const [logActionType, setLogActionType] = useState<ActionType>('RECEIVING');
   const [logQty, setLogQty] = useState('');
   const [logNotes, setLogNotes] = useState('');
+  const [logTaskId, setLogTaskId] = useState('');
 
   const categories = ['All', 'Materials', 'Equipment', 'Tools'];
-  const actionTypes = ['all', 'add_item', 'update_stock', 'delete_item', 'consume', 'return', 'correction'];
+  const actionTypes = ['all', ...ACTION_TYPES];
 
   const fetchItems = async () => {
     const response = await fetch(`${API_URL}/inventory?projectId=${projectId}`);
@@ -148,8 +159,22 @@ export default function InventoryScreen({ projectId, userId, onBack, userRole }:
     }
   };
 
+  // Fetch tasks for CONSUMPTION task-linking
+  const fetchTasks = async () => {
+    try {
+      const res = await fetch(`${API_URL}/tasks/project/${projectId}`);
+      if (res.ok) {
+        const data = await res.json();
+        setProjectTasks(Array.isArray(data) ? data : []);
+      }
+    } catch (err) {
+      console.error('Failed to fetch tasks for linking:', err);
+    }
+  };
+
   useEffect(() => {
     load();
+    fetchTasks();
   }, [projectId, selectedAction]);
 
   const handleAdd = async () => {
@@ -194,17 +219,51 @@ export default function InventoryScreen({ projectId, userId, onBack, userRole }:
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           itemName: editName,
-          quantity: editQty,
           updatedBy: userId,
-          notes: 'Stock updated from mobile app.',
         }),
       });
       if (!res.ok) throw new Error('Unable to update item.');
-      Alert.alert('Success', 'Inventory item updated.');
+      Alert.alert('Success', 'Item details updated.');
       setEditItem(null);
       await load();
     } catch (err: any) {
       Alert.alert('Error', err?.message || 'Failed to update item.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // ── Phase 2: Record Transaction (replaces direct stock edits) ──
+  const handleTransaction = async () => {
+    if (!txnItem) return;
+    const qty = Number(txnQty);
+    if (!qty || qty <= 0) return Alert.alert('Required', 'Quantity must be greater than 0.');
+    if (txnAction === 'CONSUMPTION' && !txnTaskId) {
+      return Alert.alert('Task Required', 'You must select a task for material consumption.');
+    }
+    setSaving(true);
+    try {
+      const res = await fetch(`${API_URL}/inventory/${txnItem.id}/transaction`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action_type: txnAction,
+          quantity: qty,
+          reference_task_id: txnAction === 'CONSUMPTION' ? txnTaskId : undefined,
+          notes: txnNotes || undefined,
+          created_by: userId,
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || 'Transaction failed.');
+      }
+      Alert.alert('Success', `${ACTION_TYPE_LABELS[txnAction]} recorded.`);
+      setShowTransaction(false);
+      setTxnQty(''); setTxnNotes(''); setTxnTaskId('');
+      await load();
+    } catch (err: any) {
+      Alert.alert('Error', err?.message || 'Failed to record transaction.');
     } finally {
       setSaving(false);
     }
@@ -238,28 +297,34 @@ export default function InventoryScreen({ projectId, userId, onBack, userRole }:
     if (!logItemId || !logQty) {
       return Alert.alert('Required', 'Please select item and quantity.');
     }
+    const qty = Number(logQty);
+    if (!qty || qty <= 0) return Alert.alert('Required', 'Quantity must be greater than 0.');
+    if (logActionType === 'CONSUMPTION' && !logTaskId) {
+      return Alert.alert('Task Required', 'You must select a task for material consumption.');
+    }
     setSaving(true);
     try {
-      const res = await fetch(`${API_URL}/inventory/logs`, {
+      const res = await fetch(`${API_URL}/inventory/${logItemId}/transaction`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          itemId: Number(logItemId),
-          actionType: logActionType,
-          quantity: Number(logQty),
-          notes: logNotes || null,
-          createdBy: userId,
+          action_type: logActionType,
+          quantity: qty,
+          reference_task_id: logActionType === 'CONSUMPTION' ? logTaskId : undefined,
+          notes: logNotes || undefined,
+          created_by: userId,
         }),
       });
-      if (!res.ok) throw new Error('Unable to create log entry.');
-      Alert.alert('Success', 'Inventory log added.');
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || 'Transaction failed.');
+      }
+      Alert.alert('Success', `${ACTION_TYPE_LABELS[logActionType]} recorded.`);
       setShowAddLog(false);
-      setLogItemId('');
-      setLogQty('');
-      setLogNotes('');
+      setLogItemId(''); setLogQty(''); setLogNotes(''); setLogTaskId('');
       await load();
     } catch (err: any) {
-      Alert.alert('Error', err?.message || 'Failed to create log.');
+      Alert.alert('Error', err?.message || 'Failed to create transaction.');
     } finally {
       setSaving(false);
     }
@@ -414,7 +479,8 @@ export default function InventoryScreen({ projectId, userId, onBack, userRole }:
                     onPress={() => {
                       if (!canEdit) return;
                       Alert.alert(item.item_name, 'Choose action', [
-                        { text: 'Update', onPress: () => { setEditItem(item); setEditName(item.item_name); setEditQty(String(item.quantity)); } },
+                        { text: 'Record Transaction', onPress: () => { setTxnItem(item); setTxnAction('RECEIVING'); setTxnQty(''); setTxnNotes(''); setTxnTaskId(''); setShowTransaction(true); } },
+                        { text: 'Edit Details', onPress: () => { setEditItem(item); setEditName(item.item_name); setEditQty(String(item.quantity)); } },
                         { text: 'Delete', style: 'destructive', onPress: () => handleDelete(item.id) },
                         { text: 'Cancel', style: 'cancel' },
                       ]);
@@ -493,14 +559,52 @@ export default function InventoryScreen({ projectId, userId, onBack, userRole }:
       <Modal visible={!!editItem} transparent animationType="fade" onRequestClose={() => setEditItem(null)}>
         <View className="flex-1 items-center justify-center px-6" style={{ backgroundColor: 'rgba(0,0,0,0.45)' }}>
           <View className="w-full max-w-sm rounded-3xl bg-white p-6">
-            <Text className="mb-4 text-center text-[18px] font-bold text-[#7370FF]">Edit Item</Text>
+            <Text className="mb-4 text-center text-[18px] font-bold text-[#7370FF]">Edit Item Details</Text>
             <TextInput value={editName} onChangeText={setEditName} style={inputStyle} placeholder="Item name" />
-            <TextInput value={editQty} onChangeText={setEditQty} style={inputStyle} placeholder="Quantity" keyboardType="numeric" />
+            <Text className="mb-2 text-[11px] text-[#999]">To change stock quantity, use "Record Transaction" instead.</Text>
             <TouchableOpacity onPress={handleUpdate} disabled={saving} className="h-12 items-center justify-center rounded-xl bg-[#7370FF]">
-              {saving ? <ActivityIndicator color="#fff" /> : <Text className="font-semibold text-white">Update</Text>}
+              {saving ? <ActivityIndicator color="#fff" /> : <Text className="font-semibold text-white">Update Details</Text>}
             </TouchableOpacity>
           </View>
         </View>
+      </Modal>
+
+      {/* Phase 2: Record Transaction Modal */}
+      <Modal visible={showTransaction} transparent animationType="slide" onRequestClose={() => setShowTransaction(false)}>
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} className="flex-1 justify-center px-6" style={{ backgroundColor: 'rgba(0,0,0,0.45)' }}>
+          <View className="rounded-3xl bg-white p-6">
+            <Text className="mb-4 text-center text-[18px] font-bold text-[#7370FF]">Record Transaction</Text>
+            <Text className="mb-3 text-center text-[13px] text-[#666]">{txnItem?.item_name}</Text>
+            <Text className="mb-1 text-[12px] text-[#666]">Action Type</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} className="mb-3">
+              {ACTION_TYPES.map((a) => (
+                <TouchableOpacity key={a} onPress={() => { setTxnAction(a); if (a !== 'CONSUMPTION') setTxnTaskId(''); }}
+                  className={`mr-2 rounded-full px-3 py-2 ${txnAction === a ? 'bg-[#EAE8FF]' : 'bg-[#EFEFEF]'}`}>
+                  <Text className={`text-[12px] font-semibold ${txnAction === a ? 'text-[#5F5BD5]' : 'text-[#666]'}`}>{ACTION_TYPE_LABELS[a]}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+            <TextInput value={txnQty} onChangeText={setTxnQty} style={inputStyle} keyboardType="numeric" placeholder="Quantity (must be > 0)" />
+            {txnAction === 'CONSUMPTION' && (
+              <View className="mb-3">
+                <Text className="mb-1 text-[12px] font-semibold text-[#FF9F43]">⚠ Task Required for Consumption</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                  {projectTasks.map((t) => (
+                    <TouchableOpacity key={t.id} onPress={() => setTxnTaskId(String(t.id))}
+                      className={`mr-2 rounded-full px-3 py-2 ${txnTaskId === String(t.id) ? 'bg-[#FFF0DB]' : 'bg-[#EFEFEF]'}`}>
+                      <Text className={`text-[12px] ${txnTaskId === String(t.id) ? 'text-[#FF9F43] font-semibold' : 'text-[#666]'}`}>{t.title}</Text>
+                    </TouchableOpacity>
+                  ))}
+                  {projectTasks.length === 0 && <Text className="text-[12px] text-[#999]">No tasks found for this project.</Text>}
+                </ScrollView>
+              </View>
+            )}
+            <TextInput value={txnNotes} onChangeText={setTxnNotes} style={inputStyle} placeholder="Notes (optional)" />
+            <TouchableOpacity onPress={handleTransaction} disabled={saving} className="mt-2 h-12 items-center justify-center rounded-xl" style={{ backgroundColor: ACTION_TYPE_COLORS[txnAction] }}>
+              {saving ? <ActivityIndicator color="#fff" /> : <Text className="font-semibold text-white">Submit {ACTION_TYPE_LABELS[txnAction]}</Text>}
+            </TouchableOpacity>
+          </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       <Modal visible={showAddLog} transparent animationType="fade" onRequestClose={() => setShowAddLog(false)}>
@@ -520,15 +624,28 @@ export default function InventoryScreen({ projectId, userId, onBack, userRole }:
             </ScrollView>
             <Text className="mb-1 text-[12px] text-[#666]">Action Type</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} className="mb-2">
-              {actionTypes.filter((a) => a !== 'all').map((action) => (
+              {ACTION_TYPES.map((action) => (
                 <TouchableOpacity
                   key={action}
-                  onPress={() => setLogActionType(action)}
+                  onPress={() => { setLogActionType(action); if (action !== 'CONSUMPTION') setLogTaskId(''); }}
                   className={`mr-2 rounded-full px-3 py-2 ${logActionType === action ? 'bg-[#EAE8FF]' : 'bg-[#EFEFEF]'}`}>
-                  <Text className={`${logActionType === action ? 'text-[#5F5BD5]' : 'text-[#666]'}`}>{ACTION_LABELS[action] || action}</Text>
+                  <Text className={`text-[12px] ${logActionType === action ? 'text-[#5F5BD5]' : 'text-[#666]'}`}>{ACTION_TYPE_LABELS[action]}</Text>
                 </TouchableOpacity>
               ))}
             </ScrollView>
+            {logActionType === 'CONSUMPTION' && (
+              <View className="mb-2">
+                <Text className="mb-1 text-[12px] font-semibold text-[#FF9F43]">⚠ Select Task</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                  {projectTasks.map((t) => (
+                    <TouchableOpacity key={t.id} onPress={() => setLogTaskId(String(t.id))}
+                      className={`mr-2 rounded-full px-3 py-2 ${logTaskId === String(t.id) ? 'bg-[#FFF0DB]' : 'bg-[#EFEFEF]'}`}>
+                      <Text className={`text-[12px] ${logTaskId === String(t.id) ? 'text-[#FF9F43] font-semibold' : 'text-[#666]'}`}>{t.title}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </View>
+            )}
             <TextInput value={logQty} onChangeText={setLogQty} style={inputStyle} keyboardType="numeric" placeholder="Quantity" />
             <TextInput value={logNotes} onChangeText={setLogNotes} style={inputStyle} placeholder="Remarks / notes" />
             <TouchableOpacity onPress={handleAddLog} disabled={saving} className="h-12 items-center justify-center rounded-xl bg-[#7370FF]">

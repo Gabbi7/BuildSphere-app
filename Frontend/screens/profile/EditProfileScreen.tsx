@@ -40,6 +40,26 @@ export default function EditProfileScreen({ user, onBack, onSaved }: EditProfile
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [showDatePicker, setShowDatePicker] = useState(false);
+  const hasChanges =
+    firstName !== user.firstName ||
+    middleName !== (user.middleName || '') ||
+    lastName !== user.lastName ||
+    suffix !== (user.suffix || '') ||
+    phoneNumber !== (user.phoneNumber || '') ||
+    gender !== (user.gender || 'Prefer not to say') ||
+    (birthdate ? birthdate.toISOString().slice(0, 10) : '') !== (user.birthdate || '') ||
+    address !== (user.address || '') ||
+    department !== (user.department || '') ||
+    position !== (user.position || '') ||
+    !!localImageUri;
+
+  const handleBackPress = () => {
+    if (!hasChanges) return onBack();
+    Alert.alert('Discard changes?', 'Your unsaved profile updates will be lost.', [
+      { text: 'Keep editing', style: 'cancel' },
+      { text: 'Discard', style: 'destructive', onPress: onBack },
+    ]);
+  };
 
   const initials = `${(firstName || '').charAt(0)}${(lastName || '').charAt(0)}`.toUpperCase();
 
@@ -203,7 +223,7 @@ export default function EditProfileScreen({ user, onBack, onSaved }: EditProfile
 
       {/* Header */}
       <View className="flex-row items-center justify-between px-5 pb-4 pt-14">
-        <TouchableOpacity onPress={onBack}>
+        <TouchableOpacity onPress={handleBackPress}>
           <Ionicons name="chevron-back" size={26} color="#1E1E1E" />
         </TouchableOpacity>
         <Text className="text-[17px] font-bold text-[#1E1E1E]">Edit Profile</Text>

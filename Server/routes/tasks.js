@@ -116,37 +116,21 @@ router.post('/', async (req, res) => {
       ]
     );
     const task = result.rows[0];
-    const notifTitle = 'Task Assignment';
-    const notifMessage = `New task assigned: '${title}' due ${due_date}.`;
+    const projectName = (await pool.query('SELECT project_name FROM projects WHERE id = $1', [project_id])).rows[0]?.project_name || 'this project';
 
-    // Create database notification
-    try {
-      await pool.query(
-        'INSERT INTO "public"."notifications" (type, title, message, user_id) VALUES ($1, $2, $3, $4)',
-        ['update', notifTitle, notifMessage, user_id]
-      );
-    } catch (insertErr) {
-      await pool.query(
-        'INSERT INTO "public"."notifications" (type, title, body, user_id, data, is_read, created_at) VALUES ($1, $2, $3, $4, $5, false, NOW())',
-        ['update', notifTitle, notifMessage, user_id, { type: 'task_assigned' }]
-      );
-    }
-
-    if (!created_by || String(created_by) !== String(user_id)) {
-      const projectRes = await pool.query('SELECT project_name FROM projects WHERE id = $1', [project_id]);
-      const projectName = projectRes.rows[0]?.project_name || 'this project';
-      await sendPushNotificationToUser(
-        user_id,
-        'New Task Assigned',
-        `You have been assigned a new task for ${projectName}.`,
-        {
-          type: 'task_assigned',
-          screen: 'TaskDetails',
-          task_id: String(task.id),
-          project_id: String(project_id),
-        }
-      );
-    }
+    // Phase 2: Use sendPushNotificationToUser which handles both Push and DB persistence
+    // This avoids duplicate entries and ensures reference_url is set.
+    await sendPushNotificationToUser(
+      user_id,
+      'New Task Assigned',
+      `You have been assigned a new task: '${title}' for ${projectName}.`,
+      {
+        type: 'INFO',
+        screen: 'TaskDetails',
+        task_id: String(task.id),
+        project_id: String(project_id),
+      }
+    );
 
     res.status(201).json(task);
   } catch (err) {

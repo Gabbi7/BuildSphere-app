@@ -16,12 +16,14 @@ router.get('/', async (req, res) => {
       'SELECT * FROM "public"."notifications" WHERE user_id = $1 ORDER BY created_at DESC',
       [userId]
     );
-    // Map 'date' column to 'time' for frontend if needed
+    // Map fields for frontend compatibility (Phase 2)
     const mapped = (result.rows || []).map(n => ({
       ...n,
       message: n.message || n.body || '',
       metadata: n.metadata || n.data || null,
-      time: n.time || n.date || (n.created_at ? new Date(n.created_at).toISOString() : 'Just now')
+      time: n.time || n.date || (n.created_at ? new Date(n.created_at).toISOString() : 'Just now'),
+      date: n.date || (n.created_at ? new Date(n.created_at).toISOString().split('T')[0] : null),
+      reference_url: n.reference_url || null,
     }));
     res.json(mapped);
   } catch (err) {
