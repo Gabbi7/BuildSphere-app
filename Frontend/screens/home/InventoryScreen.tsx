@@ -368,8 +368,8 @@ export default function InventoryScreen({ projectId, userId, onBack, userRole }:
   return (
     <View className="flex-1 bg-[#F8F8FA]">
       <View className="flex-row items-center px-5 pb-3 pt-12">
-        <TouchableOpacity onPress={onBack} className="mr-3">
-          <Ionicons name="chevron-back" size={28} color="#1E1E1E" />
+        <TouchableOpacity onPress={onBack} className="mr-3 -ml-2 -mt-1">
+          <Ionicons name="caret-back-outline" size={24} color="black" />
         </TouchableOpacity>
         <Text className="text-[26px] font-bold text-[#7370FF]">Inventory</Text>
       </View>
@@ -509,20 +509,102 @@ export default function InventoryScreen({ projectId, userId, onBack, userRole }:
                 <Text className="mt-2 text-[#8A8A8A]">No inventory logs found.</Text>
               </View>
             ) : (
-              filteredLogs.map((log) => (
-                <View key={log.id} className="mb-3 rounded-2xl bg-white p-4" style={{ shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 8, elevation: 2 }}>
-                  <View className="mb-1 flex-row items-center justify-between">
-                    <Text className="mr-2 flex-1 text-[15px] font-bold text-[#202020]" numberOfLines={2}>{log.item_name}</Text>
-                    <Text className="rounded-full bg-[#EEF0FF] px-2 py-1 text-[10px] font-semibold text-[#5D59D4]">{ACTION_LABELS[log.action_type] || log.action_type}</Text>
-                  </View>
-                  <Text className="text-[13px] text-[#2D2D2D]">Quantity: {log.quantity} {log.unit || 'pcs'}</Text>
-                  <Text className="text-[13px] text-[#666]">Project: {log.project_name || 'N/A'}</Text>
-                  <Text className="text-[13px] text-[#666]">Location: {log.location || 'N/A'}</Text>
-                  <Text className="text-[13px] text-[#666]">By: {log.actor_name || 'Unknown user'}</Text>
-                  <Text className="text-[13px] text-[#666]">Date: {new Date(log.created_at).toLocaleString()}</Text>
-                  {!!log.notes && <Text className="mt-1 text-[13px] italic text-[#666]">Notes: {log.notes}</Text>}
-                </View>
-              ))
+              <View className="ml-2">
+                {filteredLogs.map((log, idx) => {
+                  const type = (log.action_type || '').toLowerCase();
+                  let meta = { icon: 'receipt-outline', color: '#7370FF', bg: '#F0EFFF', prefix: '' };
+                  
+                  if (type.includes('receiving') || type.includes('add')) {
+                    meta = { icon: 'download-outline', color: '#5DBF50', bg: '#E8F5E9', prefix: '+' };
+                  } else if (type.includes('consumption') || type.includes('consume')) {
+                    meta = { icon: 'exit-outline', color: '#FF9F43', bg: '#FFF3E0', prefix: '-' };
+                  } else if (type.includes('spoilage') || type.includes('delete')) {
+                    meta = { icon: 'trash-outline', color: '#FF6B6B', bg: '#FFEBEE', prefix: '-' };
+                  } else if (type.includes('return')) {
+                    meta = { icon: 'refresh-outline', color: '#4dabf7', bg: '#e7f5ff', prefix: '+' };
+                  }
+
+                  return (
+                    <View key={log.id} className="flex-row">
+                      {/* Timeline column */}
+                      <View className="mr-4 items-center">
+                        <View 
+                          className="h-10 w-10 items-center justify-center rounded-full" 
+                          style={{ backgroundColor: meta.bg }}
+                        >
+                          <Ionicons name={meta.icon as any} size={20} color={meta.color} />
+                        </View>
+                        {idx !== filteredLogs.length - 1 && (
+                          <View className="w-[2px] flex-1 bg-[#E7E7EE]" />
+                        )}
+                      </View>
+
+                      {/* Content column */}
+                      <View className="flex-1 pb-8">
+                        <View 
+                          className="rounded-2xl bg-white p-4" 
+                          style={{ shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 10, elevation: 2 }}
+                        >
+                          <View className="mb-2 flex-row items-center justify-between">
+                            <Text className="flex-1 text-[16px] font-bold text-[#1E1E1E]" numberOfLines={1}>
+                              {log.item_name}
+                            </Text>
+                            <View className="rounded-full px-2 py-0.5" style={{ backgroundColor: meta.bg }}>
+                              <Text className="text-[10px] font-bold" style={{ color: meta.color }}>
+                                {meta.prefix}{log.quantity} {log.unit || 'pcs'}
+                              </Text>
+                            </View>
+                          </View>
+
+                          <View className="mb-3 space-y-2">
+                            <View className="flex-row items-center">
+                              <Ionicons name="business-outline" size={14} color="#7370FF" />
+                              <Text className="ml-2 flex-1 text-[12px] text-[#2D2D2D]">
+                                <Text className="font-semibold text-[#1E1E1E]">Project: </Text>
+                                {log.project_name || 'N/A'}
+                              </Text>
+                            </View>
+                            <View className="flex-row items-center">
+                              <Ionicons name="location-outline" size={14} color="#7370FF" />
+                              <Text className="ml-2 flex-1 text-[12px] text-[#2D2D2D]">
+                                <Text className="font-semibold text-[#1E1E1E]">Location: </Text>
+                                {log.location || 'N/A'}
+                              </Text>
+                            </View>
+                            <View className="flex-row items-center">
+                              <Ionicons name="person-outline" size={14} color="#7370FF" />
+                              <Text className="ml-2 text-[12px] text-[#2D2D2D]">
+                                <Text className="font-semibold text-[#1E1E1E]">By: </Text>
+                                {log.actor_name || 'Unknown'}
+                              </Text>
+                            </View>
+                          </View>
+
+                          <View className="flex-row items-center justify-between border-t border-[#F0F0F0] pt-3">
+                            <View className="flex-row items-center">
+                              <Ionicons name="calendar-outline" size={12} color="#A3A3A3" />
+                              <Text className="ml-1 text-[11px] font-medium text-[#A3A3A3]">
+                                {new Date(log.created_at).toLocaleDateString()} • {new Date(log.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                              </Text>
+                            </View>
+                            <View className="rounded-md bg-[#F8F8FA] px-2 py-1">
+                              <Text className="text-[9px] font-bold uppercase tracking-wider text-[#A3A3A3]">
+                                {ACTION_LABELS[log.action_type] || log.action_type}
+                              </Text>
+                            </View>
+                          </View>
+
+                          {!!log.notes && (
+                            <View className="mt-3 rounded-lg bg-[#FDFDFD] border-l-2 border-[#EEE] p-2">
+                              <Text className="text-[11px] italic text-[#7A7A7A]">"{log.notes}"</Text>
+                            </View>
+                          )}
+                        </View>
+                      </View>
+                    </View>
+                  );
+                })}
+              </View>
             ))}
         </ScrollView>
       )}

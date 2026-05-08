@@ -31,7 +31,7 @@ router.get('/', async (req, res) => {
       ...row,
       name: row.name || row.project_name || 'Unnamed Project',
       location: row.location || row.address || 'Unknown Location',
-      color: row.color || '#FFD6F3',
+      color: row.color || '#FFDFF2',
       progress: parseInt(row.progress) || 0
     }));
     
@@ -84,8 +84,12 @@ router.get('/:id', async (req, res) => {
 // UPDATE /projects/:id
 router.put('/:id', async (req, res) => {
   const { id } = req.params;
-  const { project_name, address, status, start_date, end_date, budget_for_materials, description, color } = req.body;
+  let { project_name, address, status, start_date, end_date, budget_for_materials, description, color } = req.body;
   
+  if (color && !/^#[0-9A-Fa-f]{6}$/i.test(color)) {
+    return res.status(400).json({ error: 'Invalid HEX color format.' });
+  }
+
   try {
     const beforeResult = await pool.query(
       'SELECT id, project_name, status, project_in_charge_id FROM projects WHERE id = $1',

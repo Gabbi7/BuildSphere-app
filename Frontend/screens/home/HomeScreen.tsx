@@ -26,6 +26,7 @@ import InventoryScreen from './InventoryScreen';
 import EditProjectScreen from './EditProjectScreen';
 import { API_URL } from '../../lib/api';
 import { supabase } from '../../lib/supabase';
+import ChangeProjectColorModal from '../../components/ChangeProjectColorModal';
 import { UserInfo } from '../../App';
 import { getPermissions } from '../../constants/roles';
 
@@ -48,16 +49,6 @@ interface Project {
   image?: any;
 }
 
-const PRESET_COLORS = [
-  '#7370FF', // Purple
-  '#FF6B6B', // Red
-  '#4ECDC4', // Teal
-  '#FFD93D', // Yellow
-  '#6BCB77', // Green
-  '#4D96FF', // Blue
-  '#F94892', // Pink
-  '#A0A0A0', // Gray
-];
 
 export default function HomeScreen({
   onLogout,
@@ -79,10 +70,11 @@ export default function HomeScreen({
   const fabAnim = useRef(new Animated.Value(0)).current;
   const [selectedTask, setSelectedTask] = useState<any>(null);
   const [projectActionModal, setProjectActionModal] = useState<Project | null>(null);
+  const [showActionSheet, setShowActionSheet] = useState(false);
   const [prefilledTask, setPrefilledTask] = useState<any>(null);
   const [showEditProject, setShowEditProject] = useState(false);
-  const [showColorPicker, setShowColorPicker] = useState(false);
   const [projectsError, setProjectsError] = useState<string | null>(null);
+  const [showChangeColor, setShowChangeColor] = useState(false);
 
   // RBAC: Filtered FAB Actions 
   const perms = useMemo(() => getPermissions(user.role), [user.role]);
@@ -100,7 +92,7 @@ export default function HomeScreen({
 
   const handleProjectAction = (project: Project) => {
     setProjectActionModal(project);
-    setShowColorPicker(false);
+    setShowActionSheet(true);
   };
 
   const deleteProject = async (projectId: number) => {
@@ -117,6 +109,7 @@ export default function HomeScreen({
               const res = await fetch(`${API_URL}/projects/${projectId}`, { method: 'DELETE' });
               if (res.ok) {
                 setProjects(prev => prev.filter(p => p.id !== projectId));
+                setShowActionSheet(false);
                 setProjectActionModal(null);
               }
             } catch (err) {
@@ -128,29 +121,6 @@ export default function HomeScreen({
     );
   };
 
-  const updateProjectColor = async (projectId: number, color: string) => {
-    console.log(`Updating project ${projectId} to color:`, color);
-    
-    // Optimistic Update: Change locally immediately
-    setProjects(prev => prev.map(p => p.id === projectId ? { ...p, color } : p));
-
-    try {
-      const res = await fetch(`${API_URL}/projects/${projectId}/color`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ color }),
-      });
-      
-      if (res.ok) {
-        setProjectActionModal(null);
-        setShowColorPicker(false);
-      } else {
-        Alert.alert('Error', 'Server failed to save color change.');
-      }
-    } catch (err) {
-      Alert.alert('Error', 'Failed to connect to server.');
-    }
-  };
 
   useEffect(() => {
     setUser(initialUser);
@@ -621,13 +591,13 @@ export default function HomeScreen({
 
       {/* Project Action Modal (ActionSheet) */}
       <Modal
-        visible={!!projectActionModal}
+        visible={showActionSheet}
         transparent={true}
         animationType="slide"
-        onRequestClose={() => setProjectActionModal(null)}>
+        onRequestClose={() => setShowActionSheet(false)}>
         <TouchableOpacity
           activeOpacity={1}
-          onPress={() => setProjectActionModal(null)}
+          onPress={() => setShowActionSheet(false)}
           className="flex-1 justify-end bg-black/40">
           <TouchableWithoutFeedback>
             <View className="rounded-t-[30px] bg-white p-6 pb-12">
@@ -638,7 +608,7 @@ export default function HomeScreen({
 
             <TouchableOpacity
               onPress={() => {
-                setProjectActionModal(null);
+                setShowActionSheet(false);
                 setShowEditProject(true);
               }}
               className="flex-row items-center py-4 border-b border-gray-50">
@@ -647,34 +617,13 @@ export default function HomeScreen({
             </TouchableOpacity>
 
             <TouchableOpacity
-              onPress={() => setShowColorPicker(!showColorPicker)}
-              className="flex-row items-center py-4 border-b border-gray-50">
-              <Ionicons name="color-palette-outline" size={22} color="#7370FF" />
-              <Text className="ml-4 text-[16px] text-[#2D2D2D]">Change Theme Color</Text>
-            </TouchableOpacity>
-
-            {showColorPicker && (
-              <View className="flex-row flex-wrap justify-center py-4 border-b border-gray-50">
-                {PRESET_COLORS.map((c) => (
-                  <TouchableOpacity
-                    key={c}
-                    onPress={() => updateProjectColor(projectActionModal!.id, c)}
-                    style={{ backgroundColor: c }}
-                    className={`m-2 h-12 w-12 items-center justify-center rounded-full border-2 ${projectActionModal?.color === c ? 'border-gray-900' : 'border-transparent'}`}
-                  >
-                    {projectActionModal?.color === c && (
-                      <Ionicons name="checkmark" size={20} color="white" />
-                    )}
-                  </TouchableOpacity>
-                ))}
-              </View>
-            )}
-
-            <TouchableOpacity
-              onPress={() => deleteProject(projectActionModal!.id)}
+              onPress={() => {
+                setShowActionSheet(false);
+                setShowChangeColor(true);
+              }}
               className="flex-row items-center py-4">
-              <Ionicons name="trash-outline" size={22} color="#FF6B6B" />
-              <Text className="ml-4 text-[16px] text-[#FF6B6B] font-semibold">Delete Project</Text>
+              <Ionicons name="color-palette-outline" size={22} color="#7370FF" />
+              <Text className="ml-4 text-[16px] text-[#2D2D2D]">Change Project Color</Text>
             </TouchableOpacity>
           </View>
           </TouchableWithoutFeedback>
@@ -687,6 +636,13 @@ export default function HomeScreen({
         project={projectActionModal}
         onClose={() => setShowEditProject(false)}
         onProjectUpdated={() => fetchProjects()}
+      />
+
+      <ChangeProjectColorModal
+        visible={showChangeColor}
+        project={projectActionModal}
+        onClose={() => setShowChangeColor(false)}
+        onColorUpdated={() => fetchProjects()}
       />
     </View>
   );

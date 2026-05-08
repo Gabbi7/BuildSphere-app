@@ -223,8 +223,8 @@ export default function EditProfileScreen({ user, onBack, onSaved }: EditProfile
 
       {/* Header */}
       <View className="flex-row items-center justify-between px-5 pb-4 pt-14">
-        <TouchableOpacity onPress={handleBackPress}>
-          <Ionicons name="chevron-back" size={26} color="#1E1E1E" />
+        <TouchableOpacity onPress={handleBackPress} className="-ml-2 -mt-1">
+          <Ionicons name="caret-back-outline" size={24} color="black" />
         </TouchableOpacity>
         <Text className="text-[17px] font-bold text-[#1E1E1E]">Edit Profile</Text>
         <TouchableOpacity onPress={handleSave} disabled={saving || uploading}>

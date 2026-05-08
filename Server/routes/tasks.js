@@ -61,16 +61,29 @@ router.get('/:taskId/progress', async (req, res) => {
   }
 });
 
-// GET /tasks/project/:projectId
-
 router.get('/project/:projectId', async (req, res) => {
   const { projectId } = req.params;
   try {
     const result = await pool.query(
-      'SELECT id, title FROM tasks WHERE project_id = $1 AND deleted_at IS NULL ORDER BY title ASC',
+      `SELECT t.*, u.first_name || ' ' || u.last_name as assigned_to_name 
+       FROM tasks t
+       LEFT JOIN users u ON t.assigned_to = u.id
+       WHERE t.project_id = $1 AND t.deleted_at IS NULL 
+       ORDER BY t.created_at DESC`,
       [projectId]
     );
-    res.json(result.rows);
+    
+    const normalized = result.rows.map(row => {
+      let status = (row.status || '').toLowerCase().replace('_', '-');
+      if (status === 'todo') status = 'pending';
+      return {
+        ...row,
+        status,
+        due_date: row.due_date ? new Date(row.due_date).toLocaleDateString() : row.due_date
+      };
+    });
+    
+    res.json(normalized);
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Failed to fetch project tasks.' });

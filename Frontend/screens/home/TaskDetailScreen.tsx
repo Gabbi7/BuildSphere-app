@@ -135,8 +135,8 @@ export default function TaskDetailScreen({
       <View className="flex-1 bg-white">
         {/* Header */}
         <View className="flex-row items-center px-5 pb-4 pt-12">
-          <TouchableOpacity onPress={onClose} className="mr-3">
-            <Ionicons name="chevron-back" size={32} color="#1E1E1E" />
+          <TouchableOpacity onPress={onClose} className="mr-3 -ml-2 -mt-1">
+            <Ionicons name="caret-back-outline" size={24} color="black" />
           </TouchableOpacity>
           <Text className="text-[32px] font-bold text-[#7370FF]">Task Details</Text>
         </View>

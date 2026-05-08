@@ -2,8 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, Image, Alert, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { UserInfo } from '../../App';
-import EditProfileScreen from './EditProfileScreen';
-import EditAccountScreen from './EditAccountScreen';
+import EditInformationScreen from './EditInformationScreen';
 import { API_URL } from '../../lib/api';
 
 interface MoreScreenProps {
@@ -13,7 +12,8 @@ interface MoreScreenProps {
 }
 
 export default function MoreScreen({ user, onLogout, onUserUpdated }: MoreScreenProps) {
-  const [screen, setScreen] = useState<'more' | 'editProfile' | 'editAccount'>('more');
+  const [screen, setScreen] = useState<'more' | 'editInfo'>('more');
+  const [initialTab, setInitialTab] = useState<'profile' | 'account'>('profile');
   const [profile, setProfile] = useState<UserInfo>(user);
   const [loadingProfile, setLoadingProfile] = useState(false);
 
@@ -65,24 +65,11 @@ export default function MoreScreen({ user, onLogout, onUserUpdated }: MoreScreen
         )
       : null;
 
-  if (screen === 'editProfile') {
+  if (screen === 'editInfo') {
     return (
-      <EditProfileScreen
+      <EditInformationScreen
         user={profile}
-        onBack={() => setScreen('more')}
-        onSaved={(updated) => {
-          setProfile(updated);
-          onUserUpdated(updated);
-          setScreen('more');
-        }}
-      />
-    );
-  }
-
-  if (screen === 'editAccount') {
-    return (
-      <EditAccountScreen
-        user={profile}
+        initialTab={initialTab}
         onBack={() => setScreen('more')}
         onSaved={(updated) => {
           setProfile(updated);
@@ -95,7 +82,7 @@ export default function MoreScreen({ user, onLogout, onUserUpdated }: MoreScreen
 
   return (
     <View className="flex-1 bg-white">
-      <ScrollView className="flex-1 px-6 pt-14" contentContainerStyle={{ paddingBottom: 120 }}>
+      <ScrollView className="flex-1 px-6 pt-14" contentContainerStyle={{ paddingBottom: 150 }}>
         {/* Avatar + Name */}
         <View className="mb-10 mt-6 items-center">
           {/* Avatar */}
@@ -130,39 +117,94 @@ export default function MoreScreen({ user, onLogout, onUserUpdated }: MoreScreen
           <Text className="mt-1 text-[13px] text-[#A3A3A3]">{profile.email}</Text>
           <Text className="mt-1 text-[12px] uppercase text-[#7D7D7D]">{profile.role || 'staff'}</Text>
 
-          <TouchableOpacity onPress={() => setScreen('editProfile')} className="mt-2">
+          <TouchableOpacity onPress={() => { setInitialTab('profile'); setScreen('editInfo'); }} className="mt-2">
             <Text className="text-[13px] font-semibold text-[#7370FF]">Edit Profile</Text>
           </TouchableOpacity>
         </View>
 
-        <View className="mb-6 rounded-2xl border border-[#F0F0F0] bg-white p-4">
-          <Text className="mb-3 text-[14px] font-bold text-[#1E1E1E]">Profile Information</Text>
-          <Text className="mb-1 text-[13px] text-[#666]">Phone: {profile.phoneNumber || 'Not set'}</Text>
-          <Text className="mb-1 text-[13px] text-[#666]">Gender: {profile.gender || 'Not set'}</Text>
-          <Text className="mb-1 text-[13px] text-[#666]">
-            Birthdate: {profile.birthdate ? new Date(profile.birthdate).toLocaleDateString() : 'Not set'}
-          </Text>
-          <Text className="mb-1 text-[13px] text-[#666]">Age: {age !== null ? age : 'Not set'}</Text>
-          <Text className="mb-1 text-[13px] text-[#666]">Department: {profile.department || 'Not set'}</Text>
-          <Text className="mb-1 text-[13px] text-[#666]">Position: {profile.position || 'Not set'}</Text>
-          <Text className="mb-1 text-[13px] text-[#666]">Address: {profile.address || 'Not set'}</Text>
-          <Text className="text-[13px] text-[#666]">Status: {profile.accountStatus || 'active'}</Text>
+        <View 
+          className="mb-8 rounded-[24px] border border-[#F0F0F0] bg-white p-6"
+          style={{ shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 15, elevation: 2 }}
+        >
+          <View className="mb-6 flex-row items-center justify-between">
+            <View>
+              <Text className="text-[16px] font-extrabold text-[#1E1E1E] uppercase tracking-tight">Profile Info</Text>
+              <View className="mt-1 flex-row items-center">
+                <View className={`h-1.5 w-1.5 rounded-full mr-1.5 ${profile.accountStatus === 'active' ? 'bg-[#4CAF50]' : 'bg-[#FF9800]'}`} />
+                <Text className="text-[10px] font-bold text-[#A3A3A3] uppercase">{profile.accountStatus || 'active'}</Text>
+              </View>
+            </View>
+            
+            <TouchableOpacity 
+              onPress={() => { setInitialTab('profile'); setScreen('editInfo'); }}
+              className="flex-row items-center bg-[#F3F0FF] px-3 py-2 rounded-xl"
+            >
+              <Ionicons name="settings-outline" size={16} color="#7370FF" />
+              <Text className="ml-1.5 text-[11px] font-bold text-[#7370FF]">Manage</Text>
+            </TouchableOpacity>
+          </View>
+
+          <View className="flex-row flex-wrap">
+            {[
+              { icon: 'call-outline', label: 'Phone', value: profile.phoneNumber, color: '#4dabf7' },
+              { icon: 'calendar-outline', label: 'Birthdate', value: profile.birthdate ? new Date(profile.birthdate).toLocaleDateString() : null, color: '#ff922b' },
+              { icon: 'hourglass-outline', label: 'Age', value: age, color: '#51cf66' },
+              { icon: 'business-outline', label: 'Dept', value: profile.department, color: '#7370FF' },
+              { icon: 'briefcase-outline', label: 'Position', value: profile.position, color: '#f06595' },
+              { icon: 'location-outline', label: 'Address', value: profile.address, color: '#845ef7' },
+            ].map((item, idx) => (
+              <View key={idx} className="mb-6 w-1/2 pr-2">
+                <View className="flex-row items-center mb-1">
+                  <View className="mr-2 h-8 w-8 items-center justify-center rounded-full" style={{ backgroundColor: `${item.color}15` }}>
+                    <Ionicons name={item.icon as any} size={18} color={item.color} />
+                  </View>
+                  <Text className="text-[11px] font-medium text-[#A3A3A3]">{item.label}</Text>
+                </View>
+                <Text className="ml-10 text-[13px] font-bold text-[#444]" numberOfLines={1}>
+                  {item.value || 'Not set'}
+                </Text>
+              </View>
+            ))}
+          </View>
+
+          <View className="mt-2 flex-row items-center border-t border-[#F9F9F9] pt-4">
+            <View className="mr-3 h-8 w-8 items-center justify-center rounded-full bg-[#F3F0FF]">
+              <Ionicons name="mail-outline" size={16} color="#7370FF" />
+            </View>
+            <View>
+              <Text className="text-[10px] font-bold uppercase tracking-wider text-[#A3A3A3]">Official Email</Text>
+              <Text className="text-[14px] font-semibold text-[#1E1E1E]">{profile.email}</Text>
+            </View>
+          </View>
         </View>
 
         {/* Menu Items */}
         <View
           className="overflow-hidden rounded-2xl border border-[#F0F0F0] bg-white"
           style={{ shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 8, elevation: 2 }}>
+          
           <TouchableOpacity
-            onPress={() => setScreen('editAccount')}
-            className="flex-row items-center justify-between border-b border-[#F5F5F5] px-5 py-4">
-            <View className="flex-row items-center">
-              <View className="mr-3 h-8 w-8 items-center justify-center rounded-full bg-[#EAE8FF]">
-                <Ionicons name="person-circle-outline" size={18} color="#7370FF" />
-              </View>
-              <Text className="text-[15px] font-medium text-[#1E1E1E]">Account</Text>
+            onPress={async () => {
+              try {
+                const res = await fetch(`${API_URL}/notifications/test`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ user_id: user.id }),
+                });
+                if (res.ok) {
+                  Alert.alert('Success', 'Test notification sent!');
+                } else {
+                  Alert.alert('Error', 'Failed to send test notification.');
+                }
+              } catch (err) {
+                Alert.alert('Error', 'Network error.');
+              }
+            }}
+            className="flex-row items-center border-b border-[#F5F5F5] px-5 py-4">
+            <View className="mr-3 h-8 w-8 items-center justify-center rounded-full bg-[#E8F5E9]">
+              <Ionicons name="flask-outline" size={18} color="#4CAF50" />
             </View>
-            <Ionicons name="chevron-forward" size={18} color="#C0C0C0" />
+            <Text className="text-[15px] font-medium text-[#1E1E1E]">Send Test Notification</Text>
           </TouchableOpacity>
 
           <TouchableOpacity 

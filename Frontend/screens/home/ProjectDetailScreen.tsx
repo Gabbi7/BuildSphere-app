@@ -13,6 +13,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { API_URL } from '../../lib/api';
 import InventoryScreen from './InventoryScreen';
 import SiteUpdatesScreen from './SiteUpdatesScreen';
+import ProjectTasksView from './ProjectTasksView';
+import TaskDetailScreen from './TaskDetailScreen';
 import { type UserRole } from '../../constants/roles';
 
 const { width } = Dimensions.get('window');
@@ -79,6 +81,7 @@ export default function ProjectDetailScreen({ projectId, userId, onBack, userRol
     'detail' | 'inventory' | 'siteUpdates' | 'tasks'
   >('detail');
   const [showSiteUpdates, setShowSiteUpdates] = useState(false);
+  const [selectedTask, setSelectedTask] = useState<any>(null);
 
   const loadProject = () => {
     setLoading(true);
@@ -102,6 +105,27 @@ export default function ProjectDetailScreen({ projectId, userId, onBack, userRol
 
   if (activeSection === 'inventory' && project) {
     return <InventoryScreen projectId={project.id} userId={userId} onBack={() => setActiveSection('detail')} userRole={userRole} />;
+  }
+
+  if (activeSection === 'tasks' && project) {
+    return (
+      <View className="flex-1">
+        <ProjectTasksView 
+          projectId={project.id} 
+          currentUserId={userId} 
+          onBack={() => setActiveSection('detail')}
+          onTaskSelect={(task) => setSelectedTask(task)}
+        />
+        {selectedTask && (
+          <TaskDetailScreen 
+            visible={!!selectedTask}
+            task={selectedTask}
+            onClose={() => setSelectedTask(null)}
+            userRole={userRole}
+          />
+        )}
+      </View>
+    );
   }
 
   if (loading) {
@@ -134,10 +158,10 @@ export default function ProjectDetailScreen({ projectId, userId, onBack, userRol
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: 120 }}>
         <View className="flex-row items-center px-5 pb-4 pt-12">
-          <TouchableOpacity onPress={onBack} className="mr-3">
-            <Ionicons name="chevron-back" size={32} color="#1E1E1E" />
+          <TouchableOpacity onPress={onBack} className="mr-3 -ml-2 -mt-1">
+            <Ionicons name="caret-back-outline" size={24} color="black" />
           </TouchableOpacity>
-          <Text className="text-[32px] font-bold text-[#7370FF]" numberOfLines={1}>{project.name}</Text>
+          <Text className="flex-1 text-[24px] font-bold text-[#7370FF]">{project.name}</Text>
         </View>
 
         {/* Main Info Card */}
@@ -229,6 +253,7 @@ export default function ProjectDetailScreen({ projectId, userId, onBack, userRol
               onPress={() => {
                 if (item.key === 'siteUpdates') setShowSiteUpdates(true);
                 else if (item.key === 'inventory') setActiveSection('inventory');
+                else if (item.key === 'tasks') setActiveSection('tasks');
               }}
               className="mb-4 flex-row items-center justify-between rounded-[20px] border border-[#F5F5F7] bg-white px-6 py-5"
               style={{ shadowColor: '#000', shadowOpacity: 0.02, shadowRadius: 5, elevation: 1 }}>

@@ -250,11 +250,35 @@ export default function Notifications({ userId, onNavigateToTask, onNavigateToIn
               {loading ? 'Loading...' : unreadCount > 0 ? `${unreadCount} unread` : 'All caught up!'}
             </Text>
           </View>
-          {unreadCount > 0 && (
-            <TouchableOpacity onPress={markAllRead} className="rounded-full bg-[#EAE8FF] px-3 py-1.5">
-              <Text className="text-[12px] font-semibold text-[#7370FF]">Mark all read</Text>
+          <View className="flex-row items-center">
+            <TouchableOpacity 
+              onPress={async () => {
+                try {
+                  const res = await fetch(`${API_URL}/notifications/test`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ user_id: userId }),
+                  });
+                  if (res.ok) {
+                    Alert.alert('Success', 'Test notification sent!');
+                  } else {
+                    Alert.alert('Error', 'Failed to send test notification.');
+                  }
+                } catch (err) {
+                  Alert.alert('Error', 'Network error.');
+                }
+              }} 
+              className="mr-2 rounded-full bg-[#F0F0F0] px-3 py-1.5"
+            >
+              <Text className="text-[12px] font-semibold text-[#666]">Send Test</Text>
             </TouchableOpacity>
-          )}
+
+            {unreadCount > 0 && (
+              <TouchableOpacity onPress={markAllRead} className="rounded-full bg-[#EAE8FF] px-3 py-1.5">
+                <Text className="text-[12px] font-semibold text-[#7370FF]">Mark all read</Text>
+              </TouchableOpacity>
+            )}
+          </View>
         </View>
 
 

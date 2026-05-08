@@ -20,8 +20,8 @@ export default function ProjectCard({
   image,
   onAction,
 }: ProjectCardProps) {
-  // Use the color directly (it's a hex code) or fallback to Soft Pink
-  const bannerColor = color || '#FFD6F3';
+  // Use the color directly (it's a hex code) or fallback to pinkish default
+  const bannerColor = color || '#FFDFF2';
 
   return (
     <View
@@ -45,10 +45,10 @@ export default function ProjectCard({
         {/* 3-dot menu */}
         {onAction ? (
           <TouchableOpacity 
-            className="absolute right-3 top-3 h-7 w-7 items-center justify-center rounded-full bg-black/10" 
+            className="absolute right-3 top-3 h-6 w-6 items-center justify-center rounded-full bg-black/10" 
             onPress={onAction}
           >
-            <Ionicons name="ellipsis-vertical" size={15} color={image ? 'white' : '#666'} />
+            <Ionicons name="ellipsis-vertical" size={13} color={image ? 'white' : '#000000ff'} />
           </TouchableOpacity>
         ) : null}
       </View>

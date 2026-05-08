@@ -560,10 +560,10 @@ export default function UploadSiteProgressScreen({ visible, user, onClose, proje
           <View className="flex-1 bg-[#F9F9FB]">
             {/* Header */}
             <View className="flex-row items-center border-b border-[#F0F0F0] bg-white px-5 pb-4 pt-10">
-              <TouchableOpacity onPress={() => setStep(1)}>
-                <Ionicons name="chevron-back" size={24} color="#1E1E1E" />
+              <TouchableOpacity onPress={() => setStep(1)} className="-ml-2 -mt-1 mr-3">
+                <Ionicons name="caret-back-outline" size={24} color="black" />
               </TouchableOpacity>
-              <Text className="ml-3 text-[16px] font-bold text-[#1E1E1E]">
+              <Text className="text-[16px] font-bold text-[#1E1E1E]">
                 Preview Photos ({selectedPhotos.length})
               </Text>
             </View>
@@ -673,10 +673,10 @@ export default function UploadSiteProgressScreen({ visible, user, onClose, proje
         {step === 3 && (
           <>
             <View className="flex-row items-center border-b border-[#F0F0F0] px-5 pb-4 pt-10">
-              <TouchableOpacity onPress={() => setStep(selectedPhotos.length > 0 ? 2 : 1)}>
-                <Ionicons name="chevron-back" size={24} color="#1E1E1E" />
+              <TouchableOpacity onPress={() => setStep(selectedPhotos.length > 0 ? 2 : 1)} className="-ml-2 -mt-1 mr-3">
+                <Ionicons name="caret-back-outline" size={24} color="black" />
               </TouchableOpacity>
-              <Text className="ml-3 text-[16px] font-bold text-[#1E1E1E]">
+              <Text className="text-[16px] font-bold text-[#1E1E1E]">
                 Finalize Record
               </Text>
             </View>
