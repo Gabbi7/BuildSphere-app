@@ -13,7 +13,6 @@ interface MoreScreenProps {
 
 export default function MoreScreen({ user, onLogout, onUserUpdated }: MoreScreenProps) {
   const [screen, setScreen] = useState<'more' | 'editInfo'>('more');
-  const [initialTab, setInitialTab] = useState<'profile' | 'account'>('profile');
   const [profile, setProfile] = useState<UserInfo>(user);
   const [loadingProfile, setLoadingProfile] = useState(false);
 
@@ -69,7 +68,6 @@ export default function MoreScreen({ user, onLogout, onUserUpdated }: MoreScreen
     return (
       <EditInformationScreen
         user={profile}
-        initialTab={initialTab}
         onBack={() => setScreen('more')}
         onSaved={(updated) => {
           setProfile(updated);
@@ -117,7 +115,7 @@ export default function MoreScreen({ user, onLogout, onUserUpdated }: MoreScreen
           <Text className="mt-1 text-[13px] text-[#A3A3A3]">{profile.email}</Text>
           <Text className="mt-1 text-[12px] uppercase text-[#7D7D7D]">{profile.role || 'staff'}</Text>
 
-          <TouchableOpacity onPress={() => { setInitialTab('profile'); setScreen('editInfo'); }} className="mt-2">
+          <TouchableOpacity onPress={() => setScreen('editInfo')} className="mt-2">
             <Text className="text-[13px] font-semibold text-[#7370FF]">Edit Profile</Text>
           </TouchableOpacity>
         </View>
@@ -136,7 +134,7 @@ export default function MoreScreen({ user, onLogout, onUserUpdated }: MoreScreen
             </View>
             
             <TouchableOpacity 
-              onPress={() => { setInitialTab('profile'); setScreen('editInfo'); }}
+              onPress={() => setScreen('editInfo')}
               className="flex-row items-center bg-[#F3F0FF] px-3 py-2 rounded-xl"
             >
               <Ionicons name="settings-outline" size={16} color="#7370FF" />

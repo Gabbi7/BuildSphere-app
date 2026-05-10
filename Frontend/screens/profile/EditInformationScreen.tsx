@@ -22,13 +22,11 @@ interface EditInformationScreenProps {
   user: UserInfo;
   onBack: () => void;
   onSaved: (updated: UserInfo) => void;
-  initialTab?: 'profile' | 'account';
 }
 
 const PRIMARY = '#7370FF';
 
-export default function EditInformationScreen({ user, onBack, onSaved, initialTab = 'profile' }: EditInformationScreenProps) {
-  const [activeTab, setActiveTab] = useState<'profile' | 'account'>(initialTab);
+export default function EditInformationScreen({ user, onBack, onSaved }: EditInformationScreenProps) {
 
   // Profile State
   const [firstName, setFirstName] = useState(user.firstName || '');
@@ -43,10 +41,7 @@ export default function EditInformationScreen({ user, onBack, onSaved, initialTa
   const [position, setPosition] = useState(user.position || '');
   const [localImageUri, setLocalImageUri] = useState<string | null>(null);
 
-  // Account State
-  const [email, setEmail] = useState(user.email || '');
-  const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
+
 
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -63,8 +58,6 @@ export default function EditInformationScreen({ user, onBack, onSaved, initialTa
     address !== (user.address || '') ||
     department !== (user.department || '') ||
     position !== (user.position || '') ||
-    email !== user.email ||
-    !!password ||
     !!localImageUri;
 
   const handleBackPress = () => {
@@ -125,63 +118,34 @@ export default function EditInformationScreen({ user, onBack, onSaved, initialTa
   };
 
   const handleSave = async () => {
-    if (activeTab === 'profile') {
-      if (!firstName.trim() || !lastName.trim()) {
-        Alert.alert('Missing info', 'First and last name are required.');
-        return;
-      }
-    } else {
-      if (!email.trim()) {
-        Alert.alert('Missing info', 'Email is required.');
-        return;
-      }
-      if (password && password !== confirmPassword) {
-        Alert.alert('Error', 'Passwords do not match.');
-        return;
-      }
+    if (!firstName.trim() || !lastName.trim()) {
+      Alert.alert('Missing info', 'First and last name are required.');
+      return;
     }
 
     setSaving(true);
     try {
       let updatedUser = { ...user };
 
-      if (activeTab === 'profile') {
-        const newPhotoUrl = await uploadPhoto();
-        const res = await fetch(`${API_URL}/users/${user.id}/profile`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            firstName, middleName, lastName, suffix,
-            phoneNumber, gender, address, department, position,
-            birthdate: birthdate ? birthdate.toISOString().slice(0, 10) : null,
-            profilePictureUrl: newPhotoUrl,
-          }),
-        });
-        const data = await res.json();
-        if (res.ok) {
-          updatedUser = { ...updatedUser, ...data };
-          if (newPhotoUrl) updatedUser.profilePictureUrl = newPhotoUrl;
-        } else {
-          Alert.alert('Error', data.error);
-          setSaving(false);
-          return;
-        }
+      const newPhotoUrl = await uploadPhoto();
+      const res = await fetch(`${API_URL}/users/${user.id}/profile`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          firstName, middleName, lastName, suffix,
+          phoneNumber, gender, address, department, position,
+          birthdate: birthdate ? birthdate.toISOString().slice(0, 10) : null,
+          profilePictureUrl: newPhotoUrl,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        updatedUser = { ...updatedUser, ...data };
+        if (newPhotoUrl) updatedUser.profilePictureUrl = newPhotoUrl;
       } else {
-        const body: any = { email };
-        if (password) body.password = password;
-        const res = await fetch(`${API_URL}/users/${user.id}/account`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body),
-        });
-        const data = await res.json();
-        if (res.ok) {
-          updatedUser.email = email;
-        } else {
-          Alert.alert('Error', data.error);
-          setSaving(false);
-          return;
-        }
+        Alert.alert('Error', data.error);
+        setSaving(false);
+        return;
       }
 
       onSaved(updatedUser);
@@ -236,28 +200,9 @@ export default function EditInformationScreen({ user, onBack, onSaved, initialTa
         className="flex-1"
         keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
       >
-        {/* Tab Switcher - Pill Design */}
-        <View className="px-14 mt-4">
-          <View className="flex-row bg-[#F8F8FA] p-1 rounded-[16px] border border-[#F0F0F5]">
-            <TouchableOpacity 
-              onPress={() => setActiveTab('profile')}
-              className={`flex-1 py-2.5 items-center rounded-[12px] ${activeTab === 'profile' ? 'bg-white shadow-sm' : ''}`}
-              style={activeTab === 'profile' ? { shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 4, elevation: 1 } : {}}
-            >
-              <Text className={`text-[13px] font-bold ${activeTab === 'profile' ? 'text-[#7370FF]' : 'text-[#A3A3A3]'}`}>Profile</Text>
-            </TouchableOpacity>
-            <TouchableOpacity 
-              onPress={() => setActiveTab('account')}
-              className={`flex-1 py-2.5 items-center rounded-[12px] ${activeTab === 'account' ? 'bg-white shadow-sm' : ''}`}
-              style={activeTab === 'account' ? { shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 4, elevation: 1 } : {}}
-            >
-              <Text className={`text-[13px] font-bold ${activeTab === 'account' ? 'text-[#7370FF]' : 'text-[#A3A3A3]'}`}>Security</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
 
-        <ScrollView className="flex-1 px-6 pt-2" showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 150 }}>
-          {activeTab === 'profile' ? (
+
+        <ScrollView className="flex-1 px-6 pt-4" showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 150 }}>
             <View>
               {/* Photo Section */}
               <View className="mb-4 mt-2 items-center">
@@ -373,49 +318,6 @@ export default function EditInformationScreen({ user, onBack, onSaved, initialTa
                 </TouchableOpacity>
               </Modal>
             </View>
-          ) : (
-            <View>
-              <View className="mb-8 p-5 bg-[#F8F8FA] rounded-2xl border border-[#F0F0F5]">
-                <Text className="text-[13px] text-[#7A7A7A] leading-5">
-                  Update your login credentials here. Changing your email will require you to use the new email for your next login.
-                </Text>
-              </View>
-
-              <View className="mb-6">
-                <Text className="mb-2 text-[12px] font-bold text-[#A3A3A3] uppercase tracking-wider">Email Address</Text>
-                <TextInput
-                  value={email}
-                  onChangeText={setEmail}
-                  style={inputStyle}
-                  placeholder="email@example.com"
-                  autoCapitalize="none"
-                  keyboardType="email-address"
-                />
-              </View>
-
-              <View className="mb-6">
-                <Text className="mb-2 text-[12px] font-bold text-[#A3A3A3] uppercase tracking-wider">New Password</Text>
-                <TextInput
-                  value={password}
-                  onChangeText={setPassword}
-                  style={inputStyle}
-                  placeholder="Leave blank to keep current"
-                  secureTextEntry
-                />
-              </View>
-
-              <View className="mb-6">
-                <Text className="mb-2 text-[12px] font-bold text-[#A3A3A3] uppercase tracking-wider">Confirm New Password</Text>
-                <TextInput
-                  value={confirmPassword}
-                  onChangeText={setConfirmPassword}
-                  style={inputStyle}
-                  placeholder="Repeat new password"
-                  secureTextEntry
-                />
-              </View>
-            </View>
-          )}
         </ScrollView>
       </KeyboardAvoidingView>
     </View>
