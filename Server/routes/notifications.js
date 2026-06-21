@@ -76,7 +76,11 @@ router.get('/', async (req, res) => {
     res.json(rows.map(mapNotificationRow));
   } catch (err) {
     console.error('FETCH_NOTIFICATIONS_ERROR:', err.message || err);
-    res.status(500).json({ message: 'Failed to fetch notifications.' });
+    res.status(500).json({
+      message: 'Failed to fetch notifications.',
+      code: err.code || null,
+      detail: err.message || 'Unknown error',
+    });
   }
 });
 
