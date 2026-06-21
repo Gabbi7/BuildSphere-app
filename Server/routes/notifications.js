@@ -8,11 +8,13 @@ const {
 } = require('../services/pushNotificationService');
 
 function mapNotificationRow(n) {
+  const rawData = n.metadata || n.data || {};
+  const data = rawData && typeof rawData === 'object' && !Array.isArray(rawData) ? rawData : {};
   const metadata = {
-    ...(n.metadata || n.data || {}),
+    ...data,
     type: n.type,
-    reference_type: n.reference_type || n.data?.reference_type,
-    reference_id: n.reference_id || n.data?.reference_id,
+    reference_type: n.reference_type || data.reference_type,
+    reference_id: n.reference_id || data.reference_id,
   };
 
   return {
@@ -29,21 +31,79 @@ function getRequestUserId(req) {
   return req.query.userId || req.body?.userId || req.body?.user_id;
 }
 
+async function getNotificationColumns() {
+  const { rows } = await pool.query(
+    `SELECT column_name
+     FROM information_schema.columns
+     WHERE table_schema = 'public' AND table_name = 'notifications'`
+  );
+  return new Set(rows.map((row) => row.column_name));
+}
+
+function notificationSelectExpression(columns, columnName, fallbackExpression, alias = columnName) {
+  if (columns.has(columnName)) return `"${columnName}"`;
+  return `${fallbackExpression} AS "${alias}"`;
+}
+
+async function fetchNotificationsForUser(userId) {
+  const columns = await getNotificationColumns();
+
+  if (columns.size === 0) {
+    return [];
+  }
+
+  const select = [
+    notificationSelectExpression(columns, 'id', 'NULL::bigint'),
+    notificationSelectExpression(columns, 'type', 'NULL::text'),
+    notificationSelectExpression(columns, 'title', "''::text"),
+    notificationSelectExpression(
+      columns,
+      'message',
+      columns.has('body') ? '"body"' : "''::text",
+      'message'
+    ),
+    notificationSelectExpression(columns, 'body', columns.has('message') ? '"message"' : "''::text", 'body'),
+    notificationSelectExpression(columns, 'time', 'NULL::text'),
+    notificationSelectExpression(columns, 'date', 'NULL::text'),
+    notificationSelectExpression(columns, 'is_read', 'false::boolean'),
+    notificationSelectExpression(columns, 'user_id', 'NULL'),
+    notificationSelectExpression(columns, 'created_at', 'NOW()'),
+    notificationSelectExpression(columns, 'updated_at', 'NULL::timestamptz'),
+    notificationSelectExpression(columns, 'reference_url', 'NULL::text'),
+    notificationSelectExpression(columns, 'data', "'{}'::jsonb"),
+    notificationSelectExpression(columns, 'reference_type', 'NULL::text'),
+    notificationSelectExpression(columns, 'reference_id', 'NULL::text'),
+  ];
+
+  const orderBy = columns.has('created_at') ? '"created_at" DESC' : '"id" DESC';
+  const result = await pool.query(
+    `SELECT ${select.join(', ')}
+     FROM "public"."notifications"
+     WHERE "user_id" = $1
+     ORDER BY ${orderBy}`,
+    [userId]
+  );
+
+  return result.rows || [];
+}
+
 // GET /notifications?userId=xxx
 router.get('/', async (req, res) => {
   const { userId } = req.query;
   if (!userId) return res.status(400).json({ error: 'userId is required.' });
 
   try {
-    await ensureNotificationTables();
-    const result = await pool.query(
-      'SELECT * FROM "public"."notifications" WHERE user_id = $1 ORDER BY created_at DESC',
-      [userId]
-    );
-    res.json((result.rows || []).map(mapNotificationRow));
+    try {
+      await ensureNotificationTables();
+    } catch (schemaError) {
+      console.warn('NOTIFICATION_SCHEMA_REPAIR_WARNING:', schemaError.message || schemaError);
+    }
+
+    const rows = await fetchNotificationsForUser(userId);
+    res.json(rows.map(mapNotificationRow));
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Failed to fetch notifications.' });
+    console.error('FETCH_NOTIFICATIONS_ERROR:', err.message || err);
+    res.status(500).json({ message: 'Failed to fetch notifications.' });
   }
 });
 
