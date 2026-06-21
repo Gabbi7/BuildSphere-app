@@ -2,6 +2,84 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../db');
 const { sendPushNotificationToUser } = require('../services/pushNotificationService');
+const {
+  isDatabaseConnectionError,
+  requireSupabaseClient,
+  runSupabaseQuery,
+} = require('../services/supabaseDataService');
+
+function mapProjectForMobile(row, progress = row.progress) {
+  return {
+    ...row,
+    name: row.name || row.project_name || 'Unnamed Project',
+    location: row.location || row.address || 'Unknown Location',
+    color: row.color || '#FFDFF2',
+    progress: parseInt(progress) || 0,
+    contract_price: row.contract_price ?? null,
+    budget_for_materials: row.budget_for_materials ?? row.total_budget ?? row.budget ?? null,
+    total_budget: row.total_budget ?? row.contract_price ?? row.budget_for_materials ?? row.budget ?? null,
+    budget: row.budget ?? row.total_budget ?? row.contract_price ?? row.budget_for_materials ?? null,
+  };
+}
+
+async function fetchProjectsFromSupabase() {
+  const supabase = requireSupabaseClient();
+  return runSupabaseQuery(
+    supabase
+      .from('projects')
+      .select('*')
+      .order('created_at', { ascending: false })
+  );
+}
+
+async function fetchProjectFromSupabase(id) {
+  const supabase = requireSupabaseClient();
+  const rows = await runSupabaseQuery(
+    supabase
+      .from('projects')
+      .select('*')
+      .eq('id', id)
+      .limit(1)
+  );
+  return rows[0] || null;
+}
+
+async function fetchMilestonePlanFromSupabase(projectId) {
+  const supabase = requireSupabaseClient();
+  const [phases, milestones] = await Promise.all([
+    runSupabaseQuery(
+      supabase
+        .from('project_phases')
+        .select('id, project_id, phase_key, sequence_no, weight_percentage, start_date, end_date')
+        .eq('project_id', projectId)
+        .order('sequence_no', { ascending: true })
+        .order('id', { ascending: true })
+    ),
+    runSupabaseQuery(
+      supabase
+        .from('project_milestones')
+        .select('id, project_id, project_phase_id, milestone_name, sequence_no, start_date, end_date, has_quantity, target_quantity, current_quantity, unit_of_measure')
+        .eq('project_id', projectId)
+        .order('sequence_no', { ascending: true })
+        .order('id', { ascending: true })
+    ),
+  ]);
+
+  const milestonesByPhase = new Map();
+  milestones.forEach((milestone) => {
+    const key = String(milestone.project_phase_id);
+    if (!milestonesByPhase.has(key)) milestonesByPhase.set(key, []);
+    milestonesByPhase.get(key).push(milestone);
+  });
+
+  return {
+    phases: phases.map((phase) => ({
+      ...phase,
+      phase_title: phase.phase_key,
+      milestones: milestonesByPhase.get(String(phase.id)) || [],
+    })),
+  };
+}
 
 // GET /projects
 router.get('/', async (req, res) => {
@@ -27,16 +105,18 @@ router.get('/', async (req, res) => {
     `);
     
     // Map DB fields to frontend expected fields
-    const mapped = result.rows.map(row => ({
-      ...row,
-      name: row.name || row.project_name || 'Unnamed Project',
-      location: row.location || row.address || 'Unknown Location',
-      color: row.color || '#FFDFF2',
-      progress: parseInt(row.progress) || 0
-    }));
+    const mapped = result.rows.map(row => mapProjectForMobile(row));
     
     res.json(mapped);
   } catch (err) {
+    if (isDatabaseConnectionError(err)) {
+      try {
+        const rows = await fetchProjectsFromSupabase();
+        return res.json(rows.map((row) => mapProjectForMobile(row)));
+      } catch (fallbackError) {
+        console.error('PROJECTS_SUPABASE_FALLBACK_FAILED:', fallbackError.message || fallbackError);
+      }
+    }
     console.error(err);
     res.status(500).json({ error: 'Failed to fetch projects.' });
   }
@@ -68,13 +148,17 @@ router.get('/:id', async (req, res) => {
     const progress = totalMilestones > 0 ? Math.round((completedMilestones / totalMilestones) * 100) : 0;
 
 
-    res.json({
-      ...project,
-      name: project.name || project.project_name,
-      location: project.location || project.address,
-      progress: progress 
-    });
+    res.json(mapProjectForMobile(project, progress));
   } catch (err) {
+    if (isDatabaseConnectionError(err)) {
+      try {
+        const project = await fetchProjectFromSupabase(req.params.id);
+        if (!project) return res.status(404).json({ error: 'Project not found.' });
+        return res.json(mapProjectForMobile(project, project.progress || 0));
+      } catch (fallbackError) {
+        console.error('PROJECT_DETAIL_SUPABASE_FALLBACK_FAILED:', fallbackError.message || fallbackError);
+      }
+    }
     console.error(err);
     res.status(500).json({ error: 'Failed to fetch project.' });
   }
@@ -126,6 +210,13 @@ router.get('/:id/milestone-plan', async (req, res) => {
       })),
     });
   } catch (err) {
+    if (isDatabaseConnectionError(err)) {
+      try {
+        return res.json(await fetchMilestonePlanFromSupabase(req.params.id));
+      } catch (fallbackError) {
+        console.error('MILESTONE_PLAN_SUPABASE_FALLBACK_FAILED:', fallbackError.message || fallbackError);
+      }
+    }
     console.error(err);
     res.status(500).json({ error: 'Failed to fetch milestone plan.' });
   }

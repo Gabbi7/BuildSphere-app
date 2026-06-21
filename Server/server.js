@@ -49,6 +49,13 @@ app.use('/api/projects/:projectId/inventory', (req, res, next) => {
 }, inventoryRoutes);
 
 app.get('/', (req, res) => res.send('BuildSphere API is running ✅'));
+app.get('/health', (req, res) => {
+  res.json({
+    status: 'ok',
+    service: 'BuildSphere API',
+    timestamp: new Date().toISOString(),
+  });
+});
 
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, '0.0.0.0', () => {

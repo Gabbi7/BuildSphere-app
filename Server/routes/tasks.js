@@ -6,6 +6,11 @@ const fs = require('fs');
 const pool = require('../db');
 const { sendPushNotificationToUser } = require('../services/pushNotificationService');
 const { calculateTaskStatus, hasQuantityTracking } = require('../services/taskStatusService');
+const {
+  isDatabaseConnectionError,
+  requireSupabaseClient,
+  runSupabaseQuery,
+} = require('../services/supabaseDataService');
 
 const TASK_PRIORITIES = new Set(['low', 'medium', 'high', 'urgent']);
 const TASK_STATUSES = new Set(['todo', 'pending', 'in_progress', 'in-progress', 'in_review', 'in-review', 'completed']);
@@ -145,6 +150,151 @@ async function canCreateTasks(actorId) {
   return CREATOR_ROLES.has(role);
 }
 
+async function enrichTasksFromSupabase(tasks) {
+  if (!tasks.length) return [];
+  const supabase = requireSupabaseClient();
+  const projectIds = [...new Set(tasks.map((task) => task.project_id).filter(Boolean))];
+  const phaseIds = [...new Set(tasks.map((task) => task.phase_id).filter(Boolean))];
+  const milestoneIds = [...new Set(tasks.map((task) => task.milestone_id).filter(Boolean))];
+  const userIds = [...new Set(tasks.map((task) => task.assigned_to).filter(Boolean))];
+
+  const [projects, phases, milestones, users] = await Promise.all([
+    projectIds.length
+      ? runSupabaseQuery(supabase.from('projects').select('id, project_name').in('id', projectIds))
+      : [],
+    phaseIds.length
+      ? runSupabaseQuery(supabase.from('project_phases').select('id, phase_key').in('id', phaseIds))
+      : [],
+    milestoneIds.length
+      ? runSupabaseQuery(
+          supabase
+            .from('project_milestones')
+            .select('id, milestone_name, has_quantity, target_quantity, current_quantity, unit_of_measure')
+            .in('id', milestoneIds)
+        )
+      : [],
+    userIds.length
+      ? runSupabaseQuery(supabase.from('users').select('id, first_name, last_name').in('id', userIds))
+      : [],
+  ]);
+
+  const projectById = new Map(projects.map((project) => [String(project.id), project]));
+  const phaseById = new Map(phases.map((phase) => [String(phase.id), phase]));
+  const milestoneById = new Map(milestones.map((milestone) => [String(milestone.id), milestone]));
+  const userById = new Map(users.map((user) => [String(user.id), user]));
+
+  return tasks.map((task) => {
+    const project = projectById.get(String(task.project_id));
+    const phase = phaseById.get(String(task.phase_id));
+    const milestone = milestoneById.get(String(task.milestone_id));
+    const user = userById.get(String(task.assigned_to));
+
+    return {
+      ...task,
+      project: project?.project_name || task.project || task.project_name || null,
+      phase: phase?.phase_key || task.phase || task.phase_name || null,
+      milestone: milestone?.milestone_name || task.milestone || task.milestone_name || null,
+      milestone_has_quantity: milestone?.has_quantity ?? task.milestone_has_quantity,
+      milestone_target_quantity: milestone?.target_quantity ?? task.milestone_target_quantity,
+      milestone_current_quantity: milestone?.current_quantity ?? task.milestone_current_quantity,
+      milestone_unit_of_measure: milestone?.unit_of_measure ?? task.milestone_unit_of_measure,
+      assigned_to_name: user
+        ? `${user.first_name || ''} ${user.last_name || ''}`.trim()
+        : task.assigned_to_name || null,
+    };
+  });
+}
+
+async function fetchAssignedTasksFromSupabase(userId) {
+  const supabase = requireSupabaseClient();
+  let tasks;
+  try {
+    tasks = await runSupabaseQuery(
+      supabase
+        .from('tasks')
+        .select('*')
+        .eq('assigned_to', String(userId))
+        .is('deleted_at', null)
+        .order('created_at', { ascending: false })
+    );
+  } catch (error) {
+    tasks = await runSupabaseQuery(
+      supabase
+        .from('tasks')
+        .select('*')
+        .eq('assigned_to', String(userId))
+        .order('id', { ascending: false })
+    );
+  }
+  return enrichTasksFromSupabase(tasks);
+}
+
+async function fetchProjectTasksFromSupabase(projectId) {
+  const supabase = requireSupabaseClient();
+  let tasks;
+  try {
+    tasks = await runSupabaseQuery(
+      supabase
+        .from('tasks')
+        .select('*')
+        .eq('project_id', String(projectId))
+        .is('deleted_at', null)
+        .order('created_at', { ascending: false })
+    );
+  } catch (error) {
+    tasks = await runSupabaseQuery(
+      supabase
+        .from('tasks')
+        .select('*')
+        .eq('project_id', String(projectId))
+        .order('id', { ascending: false })
+    );
+  }
+  return enrichTasksFromSupabase(tasks);
+}
+
+async function fetchTaskMetaFromSupabase() {
+  const supabase = requireSupabaseClient();
+  const [projects, users] = await Promise.all([
+    runSupabaseQuery(
+      supabase
+        .from('projects')
+        .select('id, project_name, status, color')
+        .order('project_name', { ascending: true })
+    ),
+    runSupabaseQuery(
+      supabase
+        .from('users')
+        .select('id, first_name, last_name, email, role')
+        .order('first_name', { ascending: true })
+        .order('last_name', { ascending: true })
+    ),
+  ]);
+
+  return {
+    projects: projects.map((project) => ({ ...project, name: project.project_name })),
+    users: users.map((user) => ({
+      ...user,
+      name: `${user.first_name || ''} ${user.last_name || ''}`.trim(),
+    })),
+  };
+}
+
+async function fetchTaskProgressFromSupabase(taskId) {
+  const supabase = requireSupabaseClient();
+  const rows = await runSupabaseQuery(
+    supabase
+      .from('task_progress_logs')
+      .select('*')
+      .eq('task_id', String(taskId))
+      .order('created_at', { ascending: false })
+  );
+  return rows.map((row) => ({
+    ...row,
+    evidence_image_path: normalizeImageUrl(row.evidence_image_path),
+  }));
+}
+
 // GET /tasks?userId=xxx
 router.get('/', async (req, res) => {
   const { userId } = req.query;
@@ -173,6 +323,14 @@ router.get('/', async (req, res) => {
 
     res.json(result.rows.map(formatTask));
   } catch (err) {
+    if (isDatabaseConnectionError(err)) {
+      try {
+        const rows = await fetchAssignedTasksFromSupabase(userId);
+        return res.json(rows.map(formatTask));
+      } catch (fallbackError) {
+        console.error('TASKS_SUPABASE_FALLBACK_FAILED:', fallbackError.message || fallbackError);
+      }
+    }
     console.error(err);
     res.status(500).json({ error: 'Failed to fetch tasks.' });
   }
@@ -212,6 +370,28 @@ router.get('/meta', async (_req, res) => {
       ],
     });
   } catch (err) {
+    if (isDatabaseConnectionError(err)) {
+      try {
+        const fallback = await fetchTaskMetaFromSupabase();
+        return res.json({
+          ...fallback,
+          priorities: [
+            { value: 'low', label: 'Low' },
+            { value: 'medium', label: 'Medium' },
+            { value: 'high', label: 'High' },
+            { value: 'urgent', label: 'Urgent' },
+          ],
+          statuses: [
+            { value: 'pending', label: 'To Do' },
+            { value: 'in_progress', label: 'In Progress' },
+            { value: 'in_review', label: 'In Review' },
+            { value: 'completed', label: 'Completed' },
+          ],
+        });
+      } catch (fallbackError) {
+        console.error('TASK_META_SUPABASE_FALLBACK_FAILED:', fallbackError.message || fallbackError);
+      }
+    }
     console.error(err);
     res.status(500).json({ error: 'Failed to fetch task metadata.' });
   }
@@ -241,6 +421,13 @@ router.get('/:taskId/progress', async (req, res) => {
       }))
     );
   } catch (err) {
+    if (isDatabaseConnectionError(err)) {
+      try {
+        return res.json(await fetchTaskProgressFromSupabase(taskId));
+      } catch (fallbackError) {
+        console.error('TASK_PROGRESS_SUPABASE_FALLBACK_FAILED:', fallbackError.message || fallbackError);
+      }
+    }
     console.error(err);
     res.status(500).json({ error: 'Failed to fetch task progress.' });
   }
@@ -272,6 +459,14 @@ router.get('/project/:projectId', async (req, res) => {
     
     res.json(result.rows.map(formatTask));
   } catch (err) {
+    if (isDatabaseConnectionError(err)) {
+      try {
+        const rows = await fetchProjectTasksFromSupabase(projectId);
+        return res.json(rows.map(formatTask));
+      } catch (fallbackError) {
+        console.error('PROJECT_TASKS_SUPABASE_FALLBACK_FAILED:', fallbackError.message || fallbackError);
+      }
+    }
     console.error(err);
     res.status(500).json({ error: 'Failed to fetch project tasks.' });
   }

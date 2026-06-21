@@ -2,11 +2,50 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../db');
 const { sendPushNotificationToUser } = require('../services/pushNotificationService');
+const {
+  isDatabaseConnectionError,
+  requireSupabaseClient,
+  runSupabaseQuery,
+} = require('../services/supabaseDataService');
 
 // ── Phase 2 Constants ───────────────────────────────────────────────────
 const VALID_ACTION_TYPES = ['RECEIVING', 'CONSUMPTION', 'SPOILAGE', 'ADJUSTMENT'];
 
 let inventorySchemaReady = false;
+
+function parseNumeric(value, fallback = 0) {
+  if (value === null || value === undefined || value === '') return fallback;
+  const parsed =
+    typeof value === 'number'
+      ? value
+      : Number(String(value).replace(/[^0-9.-]/g, ''));
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function mapInventoryItem(row) {
+  if (!row) return row;
+  return {
+    ...row,
+    id: Number(row.id),
+    project_id: Number(row.project_id),
+    quantity: parseNumeric(row.quantity ?? row.current_stock),
+    current_stock: parseNumeric(row.current_stock ?? row.quantity),
+    critical_level: parseNumeric(row.critical_level),
+    price: parseNumeric(row.price),
+  };
+}
+
+function mapInventoryLog(row) {
+  if (!row) return row;
+  return {
+    ...row,
+    id: Number(row.id),
+    item_id: Number(row.item_id),
+    project_id: row.project_id == null ? null : Number(row.project_id),
+    quantity: parseNumeric(row.quantity),
+    reference_task_id: row.reference_task_id == null ? null : Number(row.reference_task_id),
+  };
+}
 
 async function ensureInventoryColumns() {
   if (inventorySchemaReady) return;
@@ -15,6 +54,58 @@ async function ensureInventoryColumns() {
       ADD COLUMN IF NOT EXISTS unit VARCHAR(30) DEFAULT 'pcs'
   `);
   inventorySchemaReady = true;
+}
+
+async function fetchInventoryItemsFromSupabase(projectId) {
+  const supabase = requireSupabaseClient();
+  const rows = await runSupabaseQuery(
+    supabase
+      .from('project_inventory_items')
+      .select('id, project_id, item_name, category, current_stock, critical_level, price, unit, created_at, updated_at')
+      .eq('project_id', String(projectId))
+      .order('created_at', { ascending: false })
+  );
+  return rows.map(mapInventoryItem);
+}
+
+async function fetchInventoryLogsFromSupabase({ projectId, search = '', actionType = 'all' }) {
+  const supabase = requireSupabaseClient();
+  const items = await runSupabaseQuery(
+    supabase
+      .from('project_inventory_items')
+      .select('id, project_id, item_name, category, unit')
+      .eq('project_id', String(projectId))
+  );
+
+  const itemIds = items.map((item) => item.id);
+  if (!itemIds.length) return [];
+
+  let query = supabase
+    .from('project_inventory_logs')
+    .select('id, item_id, action_type, quantity, notes, reference_task_id, created_at, created_by')
+    .in('item_id', itemIds)
+    .order('created_at', { ascending: false });
+
+  if (actionType && actionType !== 'all') {
+    query = query.eq('action_type', actionType);
+  }
+
+  const logs = await runSupabaseQuery(query);
+  const itemById = new Map(items.map((item) => [String(item.id), item]));
+  const normalizedSearch = String(search || '').trim().toLowerCase();
+
+  return logs
+    .map((log) => {
+      const item = itemById.get(String(log.item_id)) || {};
+      return mapInventoryLog({
+        ...log,
+        item_name: item.item_name,
+        category: item.category,
+        unit: item.unit,
+        project_id: item.project_id,
+      });
+    })
+    .filter((log) => !normalizedSearch || String(log.item_name || '').toLowerCase().includes(normalizedSearch));
 }
 
 // GET /inventory?projectId=1
@@ -31,6 +122,13 @@ router.get('/', async (req, res) => {
     );
     res.json(result.rows);
   } catch (err) {
+    if (isDatabaseConnectionError(err)) {
+      try {
+        return res.json(await fetchInventoryItemsFromSupabase(projectId));
+      } catch (fallbackError) {
+        console.error('INVENTORY_SUPABASE_FALLBACK_FAILED:', fallbackError.message || fallbackError);
+      }
+    }
     console.error('Fetch GET error:', err);
     res.status(500).json({ error: 'Failed to fetch inventory.' });
   }
@@ -84,6 +182,13 @@ router.get('/logs', async (req, res) => {
 
     res.json(result.rows);
   } catch (err) {
+    if (isDatabaseConnectionError(err)) {
+      try {
+        return res.json(await fetchInventoryLogsFromSupabase({ projectId, search, actionType }));
+      } catch (fallbackError) {
+        console.error('INVENTORY_LOGS_SUPABASE_FALLBACK_FAILED:', fallbackError.message || fallbackError);
+      }
+    }
     console.error('Fetch logs error:', err);
     res.status(500).json({ error: 'Failed to fetch inventory logs.' });
   }
