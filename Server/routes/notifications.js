@@ -79,9 +79,9 @@ async function fetchNotificationsForUser(userId) {
   const result = await pool.query(
     `SELECT ${select.join(', ')}
      FROM "public"."notifications"
-     WHERE "user_id" = $1
+     WHERE "user_id"::text = $1
      ORDER BY ${orderBy}`,
-    [userId]
+    [String(userId)]
   );
 
   return result.rows || [];
