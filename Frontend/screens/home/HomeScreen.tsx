@@ -54,6 +54,12 @@ interface Project {
   image?: any;
 }
 
+function getProjectsArray(payload: any): any[] {
+  if (Array.isArray(payload)) return payload;
+  if (Array.isArray(payload?.projects)) return payload.projects;
+  if (Array.isArray(payload?.data)) return payload.data;
+  return [];
+}
 
 export default function HomeScreen({
   onLogout,
@@ -232,12 +238,23 @@ export default function HomeScreen({
     setLoadingProjects(true);
     setProjectsError(null);
     fetch(`${API_URL}/projects`)
-      .then((res) => res.json())
+      .then(async (res) => {
+        const data = await res.json().catch(() => null);
+        if (!res.ok) {
+          throw new Error(data?.error || data?.message || `Projects request failed (${res.status}).`);
+        }
+        return data;
+      })
       .then((data) => {
+        const projectRows = getProjectsArray(data);
+        if (!projectRows.length && !Array.isArray(data) && (data?.error || data?.message)) {
+          throw new Error(data.error || data.message);
+        }
+
         // ─── RBAC: Filter projects for Project Engineers (PIC only) ───
-        let filteredData = data;
+        let filteredData = projectRows;
         if (user.role.toLowerCase() === 'project_engineer') {
-          filteredData = data.filter((p: any) => String(p.project_in_charge_id) === String(user.id));
+          filteredData = projectRows.filter((p: any) => String(p.project_in_charge_id) === String(user.id));
         }
 
         const mappedData = filteredData.map((p: any) => {
