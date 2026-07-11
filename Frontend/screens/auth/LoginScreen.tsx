@@ -15,6 +15,7 @@ import { API_URL } from '../../lib/api';
 import { supabase } from '../../lib/supabase';
 import { UserInfo } from '../../App';
 import { useAppTheme } from '../../contexts/ThemeContext';
+import type { UserRole } from '../../constants/roles';
 
 interface LoginScreenProps {
   onLogin: (user: UserInfo, token: string) => void;
@@ -23,6 +24,48 @@ interface LoginScreenProps {
 }
 
 const PRIMARY = '#7370FF';
+
+function inferRoleFromEmail(email: string): UserRole {
+  const localPart = email.split('@')[0]?.toLowerCase() || '';
+  if (localPart.includes('projeng') || localPart.includes('engineer')) return 'project_engineer';
+  if (localPart.includes('foreman')) return 'foreman';
+  if (localPart.includes('ceo')) return 'ceo';
+  if (localPart.includes('coo')) return 'coo';
+  if (localPart.includes('account')) return 'accounting';
+  if (localPart.includes('procure')) return 'procurement';
+  if (localPart.includes('hr')) return 'human_resource';
+  if (localPart.includes('coord')) return 'project_coordinator';
+  return 'staff';
+}
+
+function inferNameFromEmail(email: string) {
+  const localPart = email.split('@')[0] || 'user';
+  const words = localPart
+    .replace(/[_-]+/g, ' ')
+    .replace(/\d+/g, ' ')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  const title = (words.length ? words : ['BuildSphere', 'User']).map(
+    (word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
+  );
+
+  if (title.length === 1) return { firstName: title[0], lastName: 'User' };
+  return { firstName: title[0], lastName: title.slice(1).join(' ') };
+}
+
+function buildFallbackProfile(email: string, id?: string): UserInfo {
+  const { firstName, lastName } = inferNameFromEmail(email);
+  const numericId = Number.parseInt(String(id || '').replace(/\D/g, '').slice(0, 9), 10);
+
+  return {
+    id: Number.isFinite(numericId) && numericId > 0 ? numericId : Date.now(),
+    firstName,
+    lastName,
+    email,
+    role: inferRoleFromEmail(email),
+  };
+}
 
 export default function LoginScreen({
   onLogin,
@@ -58,12 +101,31 @@ export default function LoginScreen({
       });
 
       if (!authError && authData.session) {
-        const profileRes = await fetch(`${API_URL}/users/by-email/${encodeURIComponent(trimmedEmail)}`);
-        const profileData = await profileRes.json();
+        let profileRes: Response;
+        let profileData: any = null;
+
+        try {
+          profileRes = await fetch(`${API_URL}/users/by-email/${encodeURIComponent(trimmedEmail)}`, {
+            headers: {
+              Authorization: `Bearer ${authData.session.access_token}`,
+            },
+          });
+          profileData = await profileRes.json().catch(() => null);
+        } catch (profileError) {
+          console.warn('Profile lookup request failed after Supabase login. Using fallback profile.', profileError);
+          onLogin(buildFallbackProfile(trimmedEmail, authData.user?.id), authData.session.access_token);
+          return;
+        }
 
         if (!profileRes.ok) {
+          if (profileRes.status >= 500) {
+            console.warn('Profile lookup failed after Supabase login. Using fallback profile.', profileData);
+            onLogin(buildFallbackProfile(trimmedEmail, authData.user?.id), authData.session.access_token);
+            return;
+          }
+
           await supabase.auth.signOut();
-          Alert.alert('Login Failed', profileData.error || 'No app profile is linked to this Supabase account.');
+          Alert.alert('Login Failed', profileData?.error || 'No app profile is linked to this Supabase account.');
           return;
         }
 
