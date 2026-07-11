@@ -2,7 +2,10 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../db');
 const bcrypt = require('bcryptjs');
+const { createClient } = require('@supabase/supabase-js');
 let userProfileSchemaReady = false;
+let supabaseAuthClient = null;
+let supabaseDataClient = null;
 
 function normalizeDateOnly(value) {
   if (!value) return null;
@@ -20,6 +23,172 @@ function normalizeDateOnly(value) {
   }
 
   return null;
+}
+
+function mapUserProfile(user) {
+  return {
+    id: user.id,
+    firstName: user.first_name,
+    middleName: user.middle_name,
+    lastName: user.last_name,
+    suffix: user.suffix,
+    email: user.email,
+    role: user.role || 'staff',
+    phoneNumber: user.phone_number,
+    gender: user.gender,
+    birthdate: normalizeDateOnly(user.birthdate),
+    address: user.address,
+    department: user.department,
+    position: user.position,
+    accountStatus: user.account_status,
+    profilePictureUrl: user.profile_picture_url,
+    createdAt: user.created_at,
+    updatedAt: user.updated_at,
+  };
+}
+
+function getSupabaseAuthClient() {
+  if (supabaseAuthClient) return supabaseAuthClient;
+  if (!process.env.SUPABASE_URL || !process.env.SUPABASE_ANON_KEY) return null;
+
+  supabaseAuthClient = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_ANON_KEY);
+  return supabaseAuthClient;
+}
+
+function getSupabaseDataClient() {
+  if (supabaseDataClient) return supabaseDataClient;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY;
+  if (!process.env.SUPABASE_URL || !key) return null;
+
+  supabaseDataClient = createClient(process.env.SUPABASE_URL, key);
+  return supabaseDataClient;
+}
+
+function getBearerToken(req) {
+  const authorization = req.get('authorization') || '';
+  const match = authorization.match(/^Bearer\s+(.+)$/i);
+  return match ? match[1].trim() : '';
+}
+
+async function getVerifiedSupabaseEmail(req) {
+  const token = getBearerToken(req);
+  if (!token) return null;
+
+  const supabase = getSupabaseAuthClient();
+  if (!supabase) return null;
+
+  const { data, error } = await supabase.auth.getUser(token);
+  if (error || !data?.user?.email) return null;
+
+  return String(data.user.email).trim().toLowerCase();
+}
+
+function inferDemoRoleFromEmail(email) {
+  const localPart = String(email || '').split('@')[0].toLowerCase();
+  if (localPart.includes('projeng') || localPart.includes('engineer')) return 'project_engineer';
+  if (localPart.includes('foreman')) return 'foreman';
+  if (localPart.includes('ceo')) return 'ceo';
+  if (localPart.includes('coo')) return 'coo';
+  if (localPart.includes('account')) return 'accounting';
+  if (localPart.includes('procure')) return 'procurement';
+  if (localPart.includes('hr')) return 'human_resource';
+  if (localPart.includes('coord')) return 'project_coordinator';
+  if (localPart.includes('supervisor')) return 'project_supervisor';
+  return 'general_staff';
+}
+
+function inferNameFromEmail(email) {
+  const localPart = String(email || '').split('@')[0] || 'user';
+  const readable = localPart.replace(/[_-]+/g, ' ').replace(/\d+/g, ' ').trim();
+  const words = readable ? readable.split(/\s+/) : ['BuildSphere', 'User'];
+  const title = words.map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase());
+
+  if (title.length === 1) {
+    const compact = title[0];
+    if (/projeng/i.test(compact)) return { firstName: 'Project', lastName: 'Engineer' };
+    return { firstName: compact, lastName: 'User' };
+  }
+
+  return { firstName: title[0], lastName: title.slice(1).join(' ') };
+}
+
+async function findBasicUserProfileByEmail(email) {
+  const result = await pool.query(
+    `SELECT id, first_name, last_name, email, role
+     FROM users
+     WHERE LOWER(email) = LOWER($1)`,
+    [email]
+  );
+
+  return result.rows[0] || null;
+}
+
+async function findUserProfileByEmailWithSupabase(email) {
+  const supabase = getSupabaseDataClient();
+  if (!supabase) return null;
+
+  const fullColumns = `
+    id,
+    first_name,
+    middle_name,
+    last_name,
+    suffix,
+    email,
+    role,
+    phone_number,
+    gender,
+    birthdate,
+    address,
+    department,
+    position,
+    account_status,
+    profile_picture_url,
+    created_at,
+    updated_at
+  `;
+
+  const fullResult = await supabase.from('users').select(fullColumns).ilike('email', email).maybeSingle();
+  if (!fullResult.error) return fullResult.data || null;
+
+  console.warn('SUPABASE_PROFILE_FULL_LOOKUP_WARNING:', fullResult.error.message || fullResult.error);
+  const basicResult = await supabase.from('users').select('id, first_name, last_name, email, role').ilike('email', email).maybeSingle();
+  if (basicResult.error) throw basicResult.error;
+  return basicResult.data || null;
+}
+
+async function findOrCreateVerifiedSupabaseProfile(req, email) {
+  const verifiedEmail = await getVerifiedSupabaseEmail(req);
+  const normalizedEmail = String(email || '').trim().toLowerCase();
+  if (!verifiedEmail || verifiedEmail !== normalizedEmail) return null;
+
+  const existingProfile = await findUserProfileByEmailWithSupabase(normalizedEmail).catch((error) => {
+    console.warn('SUPABASE_PROFILE_LOOKUP_WARNING:', error.message || error);
+    return null;
+  });
+  if (existingProfile) return existingProfile;
+
+  const supabase = getSupabaseDataClient();
+  if (!supabase) return null;
+
+  const { firstName, lastName } = inferNameFromEmail(normalizedEmail);
+  const { data, error } = await supabase
+    .from('users')
+    .insert({
+      first_name: firstName,
+      last_name: lastName,
+      email: normalizedEmail,
+      role: inferDemoRoleFromEmail(normalizedEmail),
+      account_status: 'active',
+    })
+    .select('id, first_name, last_name, email, role')
+    .maybeSingle();
+
+  if (error) {
+    console.warn('SUPABASE_PROFILE_REPAIR_WARNING:', error.message || error);
+    return null;
+  }
+
+  return data || null;
 }
 
 async function ensureUserProfileColumns() {
@@ -88,31 +257,31 @@ router.get('/by-email/:email', async (req, res) => {
       [req.params.email]
     );
 
-    if (result.rows.length === 0) return res.status(404).json({ error: 'User profile not found.' });
+    if (result.rows.length === 0) {
+      const repairedProfile = await findOrCreateVerifiedSupabaseProfile(req, req.params.email);
+      if (repairedProfile) return res.json(mapUserProfile(repairedProfile));
+      return res.status(404).json({ error: 'User profile not found.' });
+    }
 
-    const user = result.rows[0];
-    res.json({
-      id: user.id,
-      firstName: user.first_name,
-      middleName: user.middle_name,
-      lastName: user.last_name,
-      suffix: user.suffix,
-      email: user.email,
-      role: user.role || 'staff',
-      phoneNumber: user.phone_number,
-      gender: user.gender,
-      birthdate: normalizeDateOnly(user.birthdate),
-      address: user.address,
-      department: user.department,
-      position: user.position,
-      accountStatus: user.account_status,
-      profilePictureUrl: user.profile_picture_url,
-      createdAt: user.created_at,
-      updatedAt: user.updated_at,
-    });
+    res.json(mapUserProfile(result.rows[0]));
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Server error.' });
+    console.error('USER_PROFILE_LOOKUP_ERROR:', err.message || err);
+
+    try {
+      const supabaseProfile = await findUserProfileByEmailWithSupabase(req.params.email);
+      if (supabaseProfile) return res.json(mapUserProfile(supabaseProfile));
+
+      const basicUser = await findBasicUserProfileByEmail(req.params.email);
+      if (basicUser) return res.json(mapUserProfile(basicUser));
+
+      const repairedProfile = await findOrCreateVerifiedSupabaseProfile(req, req.params.email);
+      if (repairedProfile) return res.json(mapUserProfile(repairedProfile));
+
+      return res.status(404).json({ error: 'User profile not found.' });
+    } catch (fallbackError) {
+      console.error('USER_PROFILE_FALLBACK_ERROR:', fallbackError.message || fallbackError);
+      return res.status(404).json({ error: 'User profile not found.' });
+    }
   }
 });
 
